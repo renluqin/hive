@@ -2236,7 +2236,15 @@ public class HiveConf extends Configuration {
 
     HIVE_QUERY_TIMEOUT_SECONDS("hive.query.timeout.seconds", "0s",
         "Timeout for Running Query in seconds. A nonpositive value means infinite. " +
-        "If the query timeout is also set by thrift API call, the smaller one will be taken.");
+        "If the query timeout is also set by thrift API call, the smaller one will be taken."),
+
+    SERVER_NONBLOCKING_MODE("hive.server.nonblocking", true, "Server running in nonblocking mode"),
+
+    SERVER_NETWORK_THREADS("hive.server.iothreads", 8, "Number of network threads"),
+
+    SERVER_SASL_THREADS("hive.server.saslthreads", 2, "Number of sasl threads"),
+
+    SERVER_PROCESSING_THREADS("hive.server.execthreads", 8, "Number of processing threads");
 
     public final String varname;
     private final String defaultExpr;

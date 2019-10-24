@@ -365,6 +365,18 @@ public class HadoopThriftAuthBridge {
       }
     }
 
+    public TTransportFactory createTransportFactory() {
+      return new TUGIAssumingTransportFactory(new TTransportFactory(), realUgi);
+    }
+
+    public UserGroupInformation getRealUgi() {
+      return realUgi;
+    }
+
+    public DelegationTokenSecretManager getSecretManager() {
+      return secretManager;
+    }
+
     /**
      * Create a TTransportFactory that, upon connection of a client socket,
      * negotiates a Kerberized SASL transport. The resulting TTransportFactory
@@ -597,7 +609,7 @@ public class HadoopThriftAuthBridge {
     // use that Hadoop class as-is was because it needs a Server.Connection object
     // which is relevant in hadoop rpc but not here in the metastore - so the
     // code below does not deal with the Connection Server.object.
-    static class SaslDigestCallbackHandler implements CallbackHandler {
+    public static class SaslDigestCallbackHandler implements CallbackHandler {
       private final DelegationTokenSecretManager secretManager;
 
       public SaslDigestCallbackHandler(

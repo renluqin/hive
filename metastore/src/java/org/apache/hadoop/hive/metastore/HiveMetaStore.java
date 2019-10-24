@@ -192,6 +192,7 @@ import org.apache.hadoop.hive.shims.Utils;
 import org.apache.hadoop.hive.thrift.HadoopThriftAuthBridge;
 import org.apache.hadoop.hive.thrift.HadoopThriftAuthBridge.Server.ServerMode;
 import org.apache.hadoop.hive.thrift.TUGIContainingTransport;
+import org.apache.hadoop.security.SaslRpcServer;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.StringUtils;
@@ -203,12 +204,15 @@ import org.apache.thrift.protocol.TCompactProtocol;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TProtocolFactory;
 import org.apache.thrift.server.ServerContext;
+import org.apache.thrift.server.TSaslNonblockingServer;
 import org.apache.thrift.server.TServer;
 import org.apache.thrift.server.TServerEventHandler;
 import org.apache.thrift.server.TThreadPoolServer;
 import org.apache.thrift.transport.TFramedTransport;
+import org.apache.thrift.transport.TNonblockingServerSocket;
 import org.apache.thrift.transport.TServerSocket;
 import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.TTransportFactory;
 
 import javax.jdo.JDOException;
@@ -291,6 +295,11 @@ public class HiveMetaStore extends ThriftHiveMetastore {
 
   private static HadoopThriftAuthBridge.Server saslServer;
   private static boolean useSasl;
+
+  private static boolean nonblocking;
+  private static int networkThreads;
+  private static int saslThreads;
+  private static int processingThreads;
 
   public static final String NO_FILTER_STRING = "";
   public static final int UNLIMITED_MAX_PARTITIONS = -1;
@@ -6625,6 +6634,10 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       boolean useCompactProtocol = conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_COMPACT_PROTOCOL);
       boolean useSSL = conf.getBoolVar(ConfVars.HIVE_METASTORE_USE_SSL);
       useSasl = conf.getBoolVar(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL);
+      nonblocking = conf.getBoolVar(HiveConf.ConfVars.SERVER_NONBLOCKING_MODE);
+      networkThreads = conf.getIntVar(HiveConf.ConfVars.SERVER_NETWORK_THREADS);
+      saslThreads = conf.getIntVar(HiveConf.ConfVars.SERVER_SASL_THREADS);
+      processingThreads = conf.getIntVar(HiveConf.ConfVars.SERVER_PROCESSING_THREADS);
 
       TProcessor processor;
       TTransportFactory transFactory;
@@ -6642,6 +6655,44 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       IHMSHandler handler = newRetryingHMSHandler(baseHandler, conf);
       TServerSocket serverSocket  = null;
 
+      TServerEventHandler tServerEventHandler = new TServerEventHandler() {
+        @Override
+        public void preServe() {
+        }
+
+        @Override
+        public ServerContext createContext(TProtocol tProtocol, TProtocol tProtocol1) {
+          try {
+            Metrics metrics = MetricsFactory.getInstance();
+            if (metrics != null) {
+              metrics.incrementCounter(MetricsConstant.OPEN_CONNECTIONS);
+            }
+          } catch (Exception e) {
+            LOG.warn("Error Reporting Metastore open connection to Metrics system", e);
+          }
+          return null;
+        }
+
+        @Override
+        public void deleteContext(ServerContext serverContext, TProtocol tProtocol, TProtocol tProtocol1) {
+          try {
+            Metrics metrics = MetricsFactory.getInstance();
+            if (metrics != null) {
+              metrics.decrementCounter(MetricsConstant.OPEN_CONNECTIONS);
+            }
+          } catch (Exception e) {
+            LOG.warn("Error Reporting Metastore close connection to Metrics system", e);
+          }
+          // If the IMetaStoreClient#close was called, HMSHandler#shutdown would have already
+          // cleaned up thread local RawStore. Otherwise, do it now.
+          cleanupRawStore();
+        }
+
+        @Override
+        public void processContext(ServerContext serverContext, TTransport tTransport, TTransport tTransport1) {
+        }
+      };
+
       if (useSasl) {
         // we are in secure mode.
         if (useFramedTransport) {
@@ -6652,6 +6703,50 @@ public class HiveMetaStore extends ThriftHiveMetastore {
             conf.getVar(HiveConf.ConfVars.METASTORE_KERBEROS_PRINCIPAL));
         // start delegation token manager
         saslServer.startDelegationTokenSecretManager(conf, baseHandler, ServerMode.METASTORE);
+
+        if (nonblocking) {
+          LOG.info("Starting DB backed MetaStore Server in Secure Mode");
+          transFactory = saslServer.createTransportFactory();
+          processor = saslServer.wrapProcessor(
+                  new ThriftHiveMetastore.Processor<IHMSHandler>(handler));
+          TNonblockingServerSocket serverTransport = new TNonblockingServerSocket(port);
+          Map<String, String> saslProps = MetaStoreUtils.getMetaStoreSaslProperties(conf);
+          UserGroupInformation realUgi = saslServer.getRealUgi();
+          String kerberosName = realUgi.getUserName();
+          final String names[] = SaslRpcServer.splitKerberosName(kerberosName);
+          if (names.length != 3) {
+            throw new TTransportException("Kerberos principal should have 3 parts: " + kerberosName);
+          }
+          TSaslNonblockingServer.Args serverConf = new TSaslNonblockingServer.Args(serverTransport)
+                  .processor(processor)
+                  .transportFactory(transFactory)
+                  .protocolFactory(protocolFactory)
+                  .networkThreads(networkThreads)
+                  .saslThreads(saslThreads)
+                  .processingThreads(processingThreads)
+                  .addSaslMechanism(SaslRpcServer.AuthMethod.KERBEROS.getMechanismName(),
+                          names[0], names[1],  // two parts of kerberos principal
+                          saslProps, new SaslRpcServer.SaslGssCallbackHandler())
+                  .addSaslMechanism(SaslRpcServer.AuthMethod.DIGEST.getMechanismName(), null,
+                          SaslRpcServer.SASL_DEFAULT_REALM, saslProps,
+                          new HadoopThriftAuthBridge.Server.SaslDigestCallbackHandler(saslServer.getSecretManager()));
+          TSaslNonblockingServer server = new TSaslNonblockingServer(serverConf);
+          server.setServerEventHandler(tServerEventHandler);
+          HMSHandler.LOG.info("Started the new metaserver on port [" + port
+                  + "]...");
+          HMSHandler.LOG.info("Network thread number [" + networkThreads
+                  + "]...");
+          HMSHandler.LOG.info("Processing thread number [" + processingThreads
+                  + "]...");
+          HMSHandler.LOG.info("Sasl thread number [" + saslThreads
+                  + "]...");
+          if (startLock != null) {
+            signalOtherThreadsToStart(server, startLock, startCondition, startedServing);
+          }
+          server.serve();
+          return;
+        }
+
         transFactory = saslServer.createTransportFactory(
                 MetaStoreUtils.getMetaStoreSaslProperties(conf));
         processor = saslServer.wrapProcessor(
@@ -6709,43 +6804,6 @@ public class HiveMetaStore extends ThriftHiveMetastore {
           .maxWorkerThreads(maxWorkerThreads);
 
       TServer tServer = new TThreadPoolServer(args);
-      TServerEventHandler tServerEventHandler = new TServerEventHandler() {
-        @Override
-        public void preServe() {
-        }
-
-        @Override
-        public ServerContext createContext(TProtocol tProtocol, TProtocol tProtocol1) {
-          try {
-            Metrics metrics = MetricsFactory.getInstance();
-            if (metrics != null) {
-              metrics.incrementCounter(MetricsConstant.OPEN_CONNECTIONS);
-            }
-          } catch (Exception e) {
-            LOG.warn("Error Reporting Metastore open connection to Metrics system", e);
-          }
-          return null;
-        }
-
-        @Override
-        public void deleteContext(ServerContext serverContext, TProtocol tProtocol, TProtocol tProtocol1) {
-          try {
-            Metrics metrics = MetricsFactory.getInstance();
-            if (metrics != null) {
-              metrics.decrementCounter(MetricsConstant.OPEN_CONNECTIONS);
-            }
-          } catch (Exception e) {
-            LOG.warn("Error Reporting Metastore close connection to Metrics system", e);
-          }
-          // If the IMetaStoreClient#close was called, HMSHandler#shutdown would have already
-          // cleaned up thread local RawStore. Otherwise, do it now.
-          cleanupRawStore();
-        }
-
-        @Override
-        public void processContext(ServerContext serverContext, TTransport tTransport, TTransport tTransport1) {
-        }
-      };
 
       tServer.setServerEventHandler(tServerEventHandler);
       HMSHandler.LOG.info("Started the new metaserver on port [" + port
