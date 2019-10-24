@@ -143,10 +143,12 @@ public class ServerSaslPeer implements SaslPeer {
 
   @Override
   public void dispose() {
-    try {
-      saslServer.dispose();
-    } catch (Exception e) {
-      LOGGER.warn("Failed to close sasl server " + saslServer.getMechanismName(), e);
+    if (saslServer != null) {
+      try {
+        saslServer.dispose();
+      } catch (Exception e) {
+        LOGGER.warn("Failed to close sasl server " + saslServer.getMechanismName(), e);
+      }
     }
   }
 

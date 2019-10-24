@@ -206,10 +206,14 @@ public class TSaslNonblockingServer extends TServer {
     public void run() {
       try {
         while (!stopped_) {
-          handleIncomingConnections();
-          handleStateChanges();
-          select();
-          handleIO();
+          try {
+            handleIncomingConnections();
+            handleStateChanges();
+            select();
+            handleIO();
+          } catch (Exception e) {
+            LOGGER.error("Unexpected error.", e);
+          }
         }
       } catch (Throwable e) {
         LOGGER.error("Unreoverable error in " + getName(), e);
