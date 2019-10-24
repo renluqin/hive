@@ -6634,10 +6634,11 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       boolean useCompactProtocol = conf.getBoolVar(ConfVars.METASTORE_USE_THRIFT_COMPACT_PROTOCOL);
       boolean useSSL = conf.getBoolVar(ConfVars.HIVE_METASTORE_USE_SSL);
       useSasl = conf.getBoolVar(HiveConf.ConfVars.METASTORE_USE_THRIFT_SASL);
-      nonblocking = conf.getBoolVar(HiveConf.ConfVars.SERVER_NONBLOCKING_MODE);
-      networkThreads = conf.getIntVar(HiveConf.ConfVars.SERVER_NETWORK_THREADS);
-      saslThreads = conf.getIntVar(HiveConf.ConfVars.SERVER_SASL_THREADS);
-      processingThreads = conf.getIntVar(HiveConf.ConfVars.SERVER_PROCESSING_THREADS);
+      // FIXME: there is some jars in the classpath containing also hive classes, which has a conflict with current version.
+      nonblocking = conf.getBoolean("hive.server.nonblocking", true);
+      networkThreads = conf.getInt("hive.server.iothreads", 8);
+      saslThreads = conf.getInt("hive.server.saslthreads", 2);
+      processingThreads = conf.getInt("hive.server.execthreads", 8);
 
       TProcessor processor;
       TTransportFactory transFactory;
