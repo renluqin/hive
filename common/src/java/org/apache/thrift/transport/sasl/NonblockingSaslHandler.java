@@ -244,6 +244,7 @@ public class NonblockingSaslHandler {
         nextPhase = Phase.READING_SASL_RESPONSE;
       }
     } catch (TSaslNegotiationException e) {
+      LOGGER.error("Sasl negotiation failed.", e);
       failSaslNegotiation(e);
     } catch (TTransportException e) {
       failIO(e);
