@@ -35,7 +35,7 @@ public class TSaslNegotiationException extends TTransportException {
     this.error = error;
   }
 
-  public TSaslNegotiationException(ErrorType error, String summary, SaslException cause) {
+  public TSaslNegotiationException(ErrorType error, String summary, Exception cause) {
     super(summary, cause);
     this.error = error;
   }

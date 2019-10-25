@@ -19,6 +19,7 @@
 
 package org.apache.thrift.transport.sasl;
 
+import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
@@ -28,6 +29,8 @@ import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
 import java.nio.charset.StandardCharsets;
+import java.security.PrivilegedAction;
+import java.security.PrivilegedExceptionAction;
 import java.util.Arrays;
 import java.util.Map;
 
@@ -68,11 +71,18 @@ public class ServerSaslPeer implements SaslPeer {
       if (!saslMechanisms.containsKey(mechanism)) {
         throw new TSaslNegotiationException(MECHANISME_MISMATCH, "Unsupported mechanism " + mechanism);
       }
-      TSaslServerDefinition saslDef = saslMechanisms.get(mechanism);
+      final TSaslServerDefinition saslDef = saslMechanisms.get(mechanism);
       try {
-        saslServer = Sasl.createSaslServer(saslDef.mechanism, saslDef.protocol, saslDef.serverName,
-            saslDef.props, saslDef.cbh);
-      } catch (SaslException e) {
+        UserGroupInformation loginUser = UserGroupInformation.getLoginUser();
+        saslServer = loginUser.doAs(new PrivilegedExceptionAction<SaslServer>() {
+                                      @Override
+                                      public SaslServer run() throws SaslException {
+                                        return Sasl.createSaslServer(saslDef.mechanism, saslDef.protocol, saslDef.serverName,
+                                                saslDef.props, saslDef.cbh);
+                                      }
+                                    });
+
+      } catch (Exception e) {
         throw new TSaslNegotiationException(PROTOCOL_ERROR, "Failed to create sasl server " + mechanism, e);
       }
     }
