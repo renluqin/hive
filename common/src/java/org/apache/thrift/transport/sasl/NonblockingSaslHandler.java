@@ -213,6 +213,7 @@ public class NonblockingSaslHandler {
 
   // sasl negotiaion failure handling
   private void failSaslNegotiation(TSaslNegotiationException e) {
+    LOGGER.error("Sasl negotiation failed", e);
     String errorMsg = e.getDetails();
     saslChallenge.withHeaderAndPayload(new byte[]{e.getErrorType().code.getValue()}, errorMsg.getBytes(StandardCharsets.UTF_8));
     nextPhase = Phase.WRITING_FAILURE_MESSAGE;
@@ -244,7 +245,6 @@ public class NonblockingSaslHandler {
         nextPhase = Phase.READING_SASL_RESPONSE;
       }
     } catch (TSaslNegotiationException e) {
-      LOGGER.error("Sasl negotiation failed.", e);
       failSaslNegotiation(e);
     } catch (TTransportException e) {
       failIO(e);
@@ -282,8 +282,8 @@ public class NonblockingSaslHandler {
   // Computation executions
 
   private void executeEvaluatingSaslResponse() {
-    if (saslResponse.getHeader().getStatus() != OK) {
-      String error = "Expect status OK, but got " + saslResponse.getHeader().getStatus();
+    if (!(saslResponse.getHeader().getStatus() == OK || saslResponse.getHeader().getStatus() == COMPLETE)) {
+      String error = "Expect status OK or COMPLETE, but got " + saslResponse.getHeader().getStatus();
       failSaslNegotiation(new TSaslNegotiationException(ErrorType.PROTOCOL_ERROR, error));
       return;
     }
@@ -297,7 +297,6 @@ public class NonblockingSaslHandler {
         nextPhase = Phase.WRITING_SASL_CHALLENGE;
       }
     } catch (TSaslNegotiationException e) {
-      LOGGER.error("Authentication failed.", e);
       failSaslNegotiation(e);
     }
   }
