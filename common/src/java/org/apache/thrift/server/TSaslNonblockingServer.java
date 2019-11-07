@@ -19,13 +19,16 @@
 
 package org.apache.thrift.server;
 
+import org.apache.thrift.TProcessor;
 import org.apache.thrift.transport.TNonblockingServerSocket;
 import org.apache.thrift.transport.TNonblockingServerTransport;
 import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.sasl.NonblockingSaslHandler;
 import org.apache.thrift.transport.sasl.NonblockingSaslHandler.Phase;
+import org.apache.thrift.transport.sasl.TSaslProcessorFactory;
 import org.apache.thrift.transport.sasl.TSaslServerDefinition;
+import org.apache.thrift.transport.sasl.TSaslServerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,7 +37,6 @@ import java.io.IOException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -55,19 +57,21 @@ public class TSaslNonblockingServer extends TServer {
   private static final int DEFAULT_AUTHENTICATION_THREADS = 1;
   private static final int DEFAULT_PROCESSING_THREADS = Runtime.getRuntime().availableProcessors();
 
-  private final Map<String, TSaslServerDefinition> saslMechanisms;
   private final AcceptorThread acceptor;
   private final NetworkThreadPool networkThreadPool;
   private final ExecutorService authenticationExecutor;
   private final ExecutorService processingExecutor;
+  private final TSaslServerFactory saslServerFactory;
+  private final TSaslProcessorFactory saslProcessorFactory;
 
   public TSaslNonblockingServer(Args args) throws IOException {
     super(args);
-    saslMechanisms = args.saslMechanisms;
     acceptor = new AcceptorThread((TNonblockingServerSocket) serverTransport_);
     networkThreadPool = new NetworkThreadPool(args.networkThreads);
     authenticationExecutor = Executors.newFixedThreadPool(args.saslThreads);
     processingExecutor = Executors.newFixedThreadPool(args.processingThreads);
+    saslServerFactory = args.saslServerFactory;
+    saslProcessorFactory = args.saslProcessorFactory;
   }
 
   @Override
@@ -131,11 +135,8 @@ public class TSaslNonblockingServer extends TServer {
       try {
         serverTransport.listen();
         while (!stopped_) {
-          if (select() > 0) {
-            acceptNewConnection();
-          } else {
-            LOGGER.debug("Selector is waken up.");
-          }
+          select();
+          acceptNewConnection();
         }
       } catch (TTransportException e) {
         // Failed to listen.
@@ -160,10 +161,16 @@ public class TSaslNonblockingServer extends TServer {
         selectedKeyItr.remove();
         if (selected.isAcceptable()) {
           try {
-            TNonblockingTransport connection = (TNonblockingTransport) serverTransport.accept();
-            if (!networkThreadPool.acceptNewConnection(connection)) {
-              LOGGER.error("Network thread does not accept: " + connection);
-              connection.close();
+            while (true) {
+              // Accept all available connections from the backlog.
+              TNonblockingTransport connection = (TNonblockingTransport) serverTransport.accept();
+              if (connection == null) {
+                break;
+              }
+              if (!networkThreadPool.acceptNewConnection(connection)) {
+                LOGGER.error("Network thread does not accept: " + connection);
+                connection.close();
+              }
             }
           } catch (TTransportException e) {
             LOGGER.warn("Failed to accept incoming connection.", e);
@@ -172,12 +179,11 @@ public class TSaslNonblockingServer extends TServer {
       }
     }
 
-    private int select() {
+    private void select() {
       try {
-        return acceptSelector.select();
+        acceptSelector.select();
       } catch (IOException e) {
         LOGGER.error("Failed to select on the server socket.", e);
-        return 0;
       }
     }
 
@@ -206,14 +212,10 @@ public class TSaslNonblockingServer extends TServer {
     public void run() {
       try {
         while (!stopped_) {
-          try {
-            handleIncomingConnections();
-            handleStateChanges();
-            select();
-            handleIO();
-          } catch (Exception e) {
-            LOGGER.error("Unexpected error.", e);
-          }
+          handleIncomingConnections();
+          handleStateChanges();
+          select();
+          handleIO();
         }
       } catch (Throwable e) {
         LOGGER.error("Unreoverable error in " + getName(), e);
@@ -264,8 +266,8 @@ public class TSaslNonblockingServer extends TServer {
       }
     }
 
-    // The following methods are modifying the registered channel set on the selector, which is not thread safe.
-    // Thus we need a lock to protect it from race condition.
+    // The following methods are modifying the registered channel set on the selector, which itself
+    // is not thread safe. Thus we need a lock to protect it from race condition.
 
     private synchronized void handleIncomingConnections() {
       while (true) {
@@ -280,9 +282,9 @@ public class TSaslNonblockingServer extends TServer {
         try {
           SelectionKey selectionKey = connection.registerSelector(ioSelector, SelectionKey.OP_READ);
           if (selectionKey.isValid()) {
-            NonblockingSaslHandler saslHandler = new NonblockingSaslHandler(selectionKey, connection, processorFactory_,
-                    inputTransportFactory_, outputTransportFactory_, inputProtocolFactory_, outputProtocolFactory_,
-                    saslMechanisms, eventHandler_);
+            NonblockingSaslHandler saslHandler = new NonblockingSaslHandler(selectionKey, connection,
+                saslServerFactory, saslProcessorFactory, inputProtocolFactory_, outputProtocolFactory_,
+                eventHandler_);
             selectionKey.attach(saslHandler);
           }
         } catch (IOException e) {
@@ -294,6 +296,13 @@ public class TSaslNonblockingServer extends TServer {
 
     private synchronized void close() {
       LOGGER.warn("Closing " + getName());
+      while (true) {
+        TNonblockingTransport incomingConnection = incomingConnections.poll();
+        if (incomingConnection == null) {
+          break;
+        }
+        incomingConnection.close();
+      }
       Set<SelectionKey> registered = ioSelector.keys();
       for (SelectionKey selection : registered) {
         closeChannel(selection);
@@ -416,7 +425,8 @@ public class TSaslNonblockingServer extends TServer {
     private int networkThreads = DEFAULT_NETWORK_THREADS;
     private int saslThreads = DEFAULT_AUTHENTICATION_THREADS;
     private int processingThreads = DEFAULT_PROCESSING_THREADS;
-    private final Map<String, TSaslServerDefinition> saslMechanisms = new HashMap<>();
+    private TSaslServerFactory saslServerFactory = new TSaslServerFactory();
+    private TSaslProcessorFactory saslProcessorFactory;
 
     public Args(TNonblockingServerTransport transport) {
       super(transport);
@@ -437,9 +447,30 @@ public class TSaslNonblockingServer extends TServer {
       return this;
     }
 
+    public Args processor(TProcessor processor) {
+      saslProcessorFactory = new TSaslProcessorFactory(processor);
+      return this;
+    }
+
+    public Args saslProcessorFactory(TSaslProcessorFactory saslProcessorFactory) {
+      if (saslProcessorFactory == null) {
+        throw new NullPointerException("saslProcessorFactory cannot be null");
+      }
+      this.saslProcessorFactory = saslProcessorFactory;
+      return this;
+    }
+
     public Args addSaslMechanism(String mechanism, String protocol, String serverName,
                                  Map<String, String> props, CallbackHandler cbh) {
-      saslMechanisms.put(mechanism, new TSaslServerDefinition(mechanism, protocol, serverName, props, cbh));
+      saslServerFactory.addSaslMechanism(new TSaslServerDefinition(mechanism, protocol, serverName, props, cbh));
+      return this;
+    }
+
+    public Args saslServerFactory(TSaslServerFactory saslServerFactory) {
+      if (saslServerFactory == null) {
+        throw new NullPointerException("saslServerFactory cannot be null");
+      }
+      this.saslServerFactory = saslServerFactory;
       return this;
     }
   }

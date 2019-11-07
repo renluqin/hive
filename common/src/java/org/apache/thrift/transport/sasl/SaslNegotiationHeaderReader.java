@@ -21,7 +21,11 @@ package org.apache.thrift.transport.sasl;
 
 import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.PROTOCOL_ERROR;
 
-public class SaslNegotiationHeader extends FixedSizeSaslHeader {
+/**
+ * Header for sasl negotiation frames. It contains status byte of negotiation and a 4-byte integer
+ * (payload size).
+ */
+public class SaslNegotiationHeaderReader extends FixedSizeHeaderReader {
   public static final int STATUS_BYTES = 1;
   public static final int PAYLOAD_LENGTH_BYTES = 4;
 

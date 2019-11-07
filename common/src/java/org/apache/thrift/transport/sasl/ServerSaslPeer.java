@@ -19,8 +19,6 @@
 
 package org.apache.thrift.transport.sasl;
 
-import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,18 +26,11 @@ import org.slf4j.LoggerFactory;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
-import java.nio.charset.StandardCharsets;
-import java.security.PrivilegedAction;
-import java.security.PrivilegedExceptionAction;
-import java.util.Arrays;
-import java.util.Map;
 
 import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.AUTHENTICATION_FAILURE;
-import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.MECHANISME_MISMATCH;
-import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.PROTOCOL_ERROR;
 
 /**
- * Server side sasl state machine.
+ * Server side sasl peer, a wrapper around SaslServer to provide some handy methods.
  */
 public class ServerSaslPeer implements SaslPeer {
   private static final Logger LOGGER = LoggerFactory.getLogger(ServerSaslPeer.class);
@@ -47,50 +38,10 @@ public class ServerSaslPeer implements SaslPeer {
   private static final String QOP_AUTH_INT = "auth-int";
   private static final String QOP_AUTH_CONF = "auth-conf";
 
-  private final Map<String, TSaslServerDefinition> saslMechanisms;
-  private SaslServer saslServer;
-  private SaslReader<SaslNegotiationHeader> startMessage;
+  private final SaslServer saslServer;
 
-  public ServerSaslPeer(TTransport transport, Map<String, TSaslServerDefinition> saslMechanisms) {
-    this.saslMechanisms = saslMechanisms;
-    startMessage = new NegotiationSaslReader(transport);
-  }
-
-  @Override
-  public void initialize() throws TTransportException {
-    if (!startMessage.isComplete()) {
-      startMessage.read();
-    }
-    if (startMessage.isComplete()) {
-      SaslNegotiationHeader startHeader = startMessage.getHeader();
-      if (startHeader.getStatus() != NegotiationStatus.START) {
-        throw new TInvalidSaslFrameException("Expecting START status but got " + startHeader.getStatus());
-      }
-      byte[] payload = startMessage.getPayload();
-      String mechanism = new String(payload, StandardCharsets.UTF_8);
-      if (!saslMechanisms.containsKey(mechanism)) {
-        throw new TSaslNegotiationException(MECHANISME_MISMATCH, "Unsupported mechanism " + mechanism);
-      }
-      final TSaslServerDefinition saslDef = saslMechanisms.get(mechanism);
-      try {
-        UserGroupInformation loginUser = UserGroupInformation.getLoginUser();
-        saslServer = loginUser.doAs(new PrivilegedExceptionAction<SaslServer>() {
-                                      @Override
-                                      public SaslServer run() throws SaslException {
-                                        return Sasl.createSaslServer(saslDef.mechanism, saslDef.protocol, saslDef.serverName,
-                                                saslDef.props, saslDef.cbh);
-                                      }
-                                    });
-
-      } catch (Exception e) {
-        throw new TSaslNegotiationException(PROTOCOL_ERROR, "Failed to create sasl server " + mechanism, e);
-      }
-    }
-  }
-
-  @Override
-  public boolean isInitialized() {
-    return saslServer != null;
+  public ServerSaslPeer(SaslServer saslServer) {
+    this.saslServer = saslServer;
   }
 
   @Override
@@ -114,9 +65,9 @@ public class ServerSaslPeer implements SaslPeer {
     if (qop == null) {
       return false;
     }
-    String[] words = qop.toString().split("\\s*,\\s*");
-    for (String word : words) {
-      if (QOP_AUTH_INT.equalsIgnoreCase(word) || QOP_AUTH_CONF.equalsIgnoreCase(word)) {
+    for (String word : qop.toString().split("\\s*,\\s*")) {
+      String lowerCaseWord = word.toLowerCase();
+      if (QOP_AUTH_INT.equals(lowerCaseWord) || QOP_AUTH_CONF.equals(lowerCaseWord)) {
         return true;
       }
     }
@@ -133,11 +84,6 @@ public class ServerSaslPeer implements SaslPeer {
   }
 
   @Override
-  public byte[] wrap(byte[] data) throws TTransportException {
-    return wrap(data, 0, data.length);
-  }
-
-  @Override
   public byte[] unwrap(byte[] data, int offset, int length) throws TTransportException {
     try {
       return saslServer.unwrap(data, offset, length);
@@ -147,22 +93,16 @@ public class ServerSaslPeer implements SaslPeer {
   }
 
   @Override
-  public byte[] unwrap(byte[] data) throws TTransportException {
-    return unwrap(data, 0, data.length);
-  }
-
-  @Override
   public void dispose() {
-    if (saslServer != null) {
-      try {
-        saslServer.dispose();
-      } catch (Exception e) {
-        LOGGER.warn("Failed to close sasl server " + saslServer.getMechanismName(), e);
-      }
+    try {
+      saslServer.dispose();
+    } catch (Exception e) {
+      LOGGER.warn("Failed to close sasl server " + saslServer.getMechanismName(), e);
     }
   }
 
   SaslServer getSaslServer() {
     return saslServer;
   }
+
 }

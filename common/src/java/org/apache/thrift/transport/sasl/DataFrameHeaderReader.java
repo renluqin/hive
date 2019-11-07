@@ -19,11 +19,29 @@
 
 package org.apache.thrift.transport.sasl;
 
-import org.apache.thrift.transport.TTransport;
+/**
+ * The header for data frame, it only contains a 4-byte payload size.
+ */
+public class DataFrameHeaderReader extends FixedSizeHeaderReader {
+  public static final int PAYLOAD_LENGTH_BYTES = 4;
 
-public class DataFrameSaslReader extends SaslReader<DataFrameHeader> {
+  private int payloadSize;
 
-  public DataFrameSaslReader(TTransport transport) {
-    super(new DataFrameHeader(), transport);
+  @Override
+  protected int headerSize() {
+    return PAYLOAD_LENGTH_BYTES;
+  }
+
+  @Override
+  protected void onComplete() throws TInvalidSaslFrameException {
+    payloadSize = byteBuffer.getInt(0);
+    if (payloadSize < 0) {
+      throw new TInvalidSaslFrameException("Payload size is negative: " + payloadSize);
+    }
+  }
+
+  @Override
+  public int payloadSize() {
+    return payloadSize;
   }
 }

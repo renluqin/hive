@@ -23,9 +23,9 @@ import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 
 /**
- * Read sasl frame header per the thrift sasl specification.
+ * Read headers for a frame. For each frame, the header contains payload size and other metadata.
  */
-public interface SaslHeader {
+public interface FrameHeaderReader {
 
   /**
    * As the thrift sasl specification states, all sasl messages (both for negotiatiing and for sending

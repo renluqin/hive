@@ -26,9 +26,9 @@ import org.apache.thrift.utils.StringUtils;
 import java.nio.ByteBuffer;
 
 /**
- * The size of a header should be predefined.
+ * Headers' size should be predefined.
  */
-public abstract class FixedSizeSaslHeader implements SaslHeader {
+public abstract class FixedSizeHeaderReader implements FrameHeaderReader {
 
   protected final ByteBuffer byteBuffer = ByteBuffer.allocate(headerSize());
   private boolean complete = false;
@@ -54,7 +54,7 @@ public abstract class FixedSizeSaslHeader implements SaslHeader {
 
   @Override
   public int read(TTransport transport) throws TTransportException {
-    int got = SaslReader.readAvailable(transport, byteBuffer);
+    int got = FrameReader.readAvailable(transport, byteBuffer);
     tryComplete();
     return got;
   }
@@ -68,7 +68,7 @@ public abstract class FixedSizeSaslHeader implements SaslHeader {
 
   @Override
   public int readAll(TTransport transport) throws TTransportException {
-    int got = SaslReader.readAll(transport, byteBuffer);
+    int got = FrameReader.readAll(transport, byteBuffer);
     tryComplete();
     return got;
   }

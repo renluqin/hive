@@ -19,24 +19,21 @@
 
 package org.apache.thrift.transport.sasl;
 
-import org.apache.thrift.transport.TNonblockingTransport;
-import org.apache.thrift.utils.StringUtils;
+import org.apache.thrift.TProcessor;
 
-import java.nio.ByteBuffer;
+/**
+ * Get processor for a given state machine, so that users can customize the behavior of a TProcessor
+ * by interacting with the state machine.
+ */
+public class TSaslProcessorFactory {
 
-public class DataFrameSaslWriter extends SaslWriter {
+  private final TProcessor processor;
 
-  public DataFrameSaslWriter(TNonblockingTransport transport) {
-    super(transport);
+  public TSaslProcessorFactory(TProcessor processor) {
+    this.processor = processor;
   }
 
-  @Override
-  protected ByteBuffer buildBuffer(byte[] header, byte[] payload) {
-    if (header != null && header.length > 0) {
-      throw new IllegalArgumentException("Header should be empty, but got " + StringUtils.bytesToHexString(header));
-    }
-    return ByteBuffer.allocate(DataFrameHeader.PAYLOAD_LENGTH_BYTES + payload.length)
-        .putInt(payload.length)
-        .put(payload);
+  public TProcessor getProcessor(NonblockingSaslHandler saslHandler) {
+    return processor;
   }
 }

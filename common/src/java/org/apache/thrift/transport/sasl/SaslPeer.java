@@ -27,19 +27,6 @@ import org.apache.thrift.transport.TTransportException;
 public interface SaslPeer {
 
   /**
-   * Initialize sasl peer to make it ready for negotiation.
-   *
-   * @throws TSaslNegotiationException if something goes wrong during the sasl initialization (such as mechanism mismatch)
-   * @throws TTransportException if io error.
-   */
-  void initialize() throws TSaslNegotiationException, TTransportException;
-
-  /**
-   * @return true if this sasl peer is initialized and ready to participate to negotiation.
-   */
-  boolean isInitialized();
-
-  /**
    * Evaluate and validate the negotiation message (response/challenge) received from peer.
    *
    * @param negotiationMessage response/challenge received from peer.
@@ -54,8 +41,11 @@ public interface SaslPeer {
   boolean isAuthenticated();
 
   /**
+   * This method can only be called when the negotiation is complete (isAuthenticated returns true).
+   * Otherwise it will throw IllegalStateExceptiion.
    *
    * @return if the qop requires some integrity/confidential protection.
+   * @throws IllegalStateException if negotiation is not yet complete.
    */
   boolean isDataProtected();
 
@@ -77,7 +67,9 @@ public interface SaslPeer {
    * @return wrapped bytes.
    * @throws TTransportException if failure.
    */
-  byte[] wrap(byte[] data) throws TTransportException;
+  default byte[] wrap(byte[] data) throws TTransportException {
+    return wrap(data, 0, data.length);
+  }
 
   /**
    * Unwrap protected data to raw bytes.
@@ -97,7 +89,9 @@ public interface SaslPeer {
    * @return raw bytes.
    * @throws TTransportException if failure.
    */
-  byte[] unwrap(byte[] data) throws TTransportException;
+  default byte[] unwrap(byte[] data) throws TTransportException {
+    return unwrap(data, 0, data.length);
+  }
 
   /**
    * Close this peer and release resources.

@@ -19,23 +19,26 @@
 
 package org.apache.thrift.transport.sasl;
 
-import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.utils.StringUtils;
 
 import java.nio.ByteBuffer;
 
-public class NegotiationSaslWriter extends SaslWriter {
+import static org.apache.thrift.transport.sasl.SaslNegotiationHeaderReader.PAYLOAD_LENGTH_BYTES;
+import static org.apache.thrift.transport.sasl.SaslNegotiationHeaderReader.STATUS_BYTES;
 
-  public NegotiationSaslWriter(TNonblockingTransport transport) {
-    super(transport);
-  }
+/**
+ * Writer for sasl negotiation frames. It expect a status byte as header with a payload to be
+ * written out (any header whose size is not equal to 1 would be considered as error).
+ */
+public class SaslNegotiationFrameWriter extends FrameWriter {
 
   @Override
   protected ByteBuffer buildBuffer(byte[] header, byte[] payload) {
-    if (header == null || header.length != SaslNegotiationHeader.STATUS_BYTES) {
-      throw new IllegalArgumentException("Header " + StringUtils.bytesToHexString(header) + " does not have expected length " + SaslNegotiationHeader.STATUS_BYTES);
+    if (header == null || header.length != STATUS_BYTES) {
+      throw new IllegalArgumentException("Header " + StringUtils.bytesToHexString(header) +
+          " does not have expected length " + STATUS_BYTES);
     }
-    return ByteBuffer.allocate(SaslNegotiationHeader.STATUS_BYTES + SaslNegotiationHeader.PAYLOAD_LENGTH_BYTES + payload.length)
+    return ByteBuffer.allocate(STATUS_BYTES + PAYLOAD_LENGTH_BYTES + payload.length)
         .put(header)
         .putInt(payload.length)
         .put(payload);

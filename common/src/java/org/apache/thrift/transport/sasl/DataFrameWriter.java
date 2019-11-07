@@ -19,11 +19,24 @@
 
 package org.apache.thrift.transport.sasl;
 
-import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.utils.StringUtils;
 
-public class NegotiationSaslReader extends SaslReader<SaslNegotiationHeader> {
+import java.nio.ByteBuffer;
 
-  public NegotiationSaslReader(TTransport transport) {
-    super(new SaslNegotiationHeader(), transport);
+/**
+ * Write frames of thrift messages. It expects an empty/null header to be provided with a payload
+ * to be written out. Non empty headers are considered as error.
+ */
+public class DataFrameWriter extends FrameWriter {
+
+  @Override
+  protected ByteBuffer buildBuffer(byte[] header, byte[] payload) {
+    if (header != null && header.length > 0) {
+      throw new IllegalArgumentException("Header should be empty, but got " +
+          StringUtils.bytesToHexString(header));
+    }
+    return ByteBuffer.allocate(DataFrameHeaderReader.PAYLOAD_LENGTH_BYTES + payload.length)
+        .putInt(payload.length)
+        .put(payload);
   }
 }

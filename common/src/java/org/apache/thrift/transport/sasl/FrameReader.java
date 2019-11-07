@@ -26,17 +26,17 @@ import org.apache.thrift.transport.TTransportException;
 import java.nio.ByteBuffer;
 
 /**
- * Read messages from sasl transport. Implementations should subclass it by providing a header implementation.
+ * Read frames from a transport. Each frame has a header and a payload. A header will indicate
+ * the size of the payload and other informations about how to decode payload.
+ * Implementations should subclass it by providing a header reader implementation.
  *
  * @param <T> Header type.
  */
-public abstract class SaslReader<T extends SaslHeader> {
-  private final TTransport transport;
+public abstract class FrameReader<T extends FrameHeaderReader> {
   private final T header;
-  private ByteBuffer frameBytes;
+  private ByteBuffer payload;
 
-  protected SaslReader(T header, TTransport transport) {
-    this.transport = transport;
+  protected FrameReader(T header) {
     this.header = header;
   }
 
@@ -44,18 +44,17 @@ public abstract class SaslReader<T extends SaslHeader> {
    * (Nonblocking) Read available bytes out of the transport without blocking to wait for incoming
    * data.
    *
+   * @param transport TTransport
    * @return bytes read
    * @throws TSaslNegotiationException if fail to read back a valid sasl negotiation message.
    * @throws TTransportException if io error.
    */
-  public int read() throws TSaslNegotiationException, TTransportException {
+  public int read(TTransport transport) throws TSaslNegotiationException, TTransportException {
     int got = 0;
     if (!header.isComplete()) {
       got += readHeader(transport);
       if (header.isComplete()) {
-        byte[] headerBytes = header.toBytes();
-        frameBytes = ByteBuffer.allocate(headerBytes.length + header.payloadSize());
-        frameBytes.put(headerBytes);
+        payload = ByteBuffer.allocate(header.payloadSize());
       } else {
         return got;
       }
@@ -85,45 +84,47 @@ public abstract class SaslReader<T extends SaslHeader> {
    * @throws TTransportException if io error.
    */
   private int readPayload(TTransport transport) throws TTransportException {
-    return readAvailable(transport, frameBytes);
+    return readAvailable(transport, payload);
   }
 
+  /**
+   *
+   * @return header of the frame
+   */
   public T getHeader() {
     return header;
   }
 
+  /**
+   *
+   * @return number of bytes of the header
+   */
   public int getHeaderSize() {
     return header.toBytes().length;
   }
 
+  /**
+   *
+   * @return byte array of the payload
+   */
   public byte[] getPayload() {
-    byte[] bytes = new byte[getPayloadSize()];
-    System.arraycopy(getFrameBytes(), getHeaderSize(), bytes, 0, getPayloadSize());
-    return bytes;
+    return payload.array();
   }
 
+  /**
+   *
+   * @return size of the payload
+   */
   public int getPayloadSize() {
     return header.payloadSize();
   }
 
   /**
    *
-   * @return All bytes (both header and payload).
-   * @throws IllegalStateException if it is called before reader finishes reading a whole frame.
-   */
-  public byte[] getFrameBytes() {
-    if (!isComplete()) {
-      throw new IllegalStateException("Reader is not yet complete.");
-    }
-    return frameBytes.array();
-  }
-
-  /**
-   *
-   * @return true if the reader has fully read a frame.
+   * @return true if the reader has fully read a frame
    */
   public boolean isComplete() {
-    return !(frameBytes == null || frameBytes.hasRemaining());
+    return !(payload == null || payload.hasRemaining());
   }
 
   /**
@@ -131,7 +132,7 @@ public abstract class SaslReader<T extends SaslHeader> {
    */
   public void clear() {
     header.clear();
-    frameBytes = null;
+    payload = null;
   }
 
   /**

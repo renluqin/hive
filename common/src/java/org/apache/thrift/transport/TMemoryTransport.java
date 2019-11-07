@@ -33,7 +33,7 @@ import java.util.List;
 public class TMemoryTransport extends TTransport {
 
   private ByteBuffer inputBuffer;
-  private List<ByteBuffer> outputBuffer = new ArrayList<>(1);
+  private List<byte[]> outputBuffer = new ArrayList<>();
 
   @Override
   public boolean isOpen() {
@@ -67,7 +67,9 @@ public class TMemoryTransport extends TTransport {
 
   @Override
   public void write(byte[] buf, int off, int len) throws TTransportException {
-    outputBuffer.add(ByteBuffer.wrap(buf, off, len));
+    byte[] written = new byte[len];
+    System.arraycopy(buf, off, written, 0, len);
+    outputBuffer.add(written);
   }
 
   /**
@@ -88,14 +90,14 @@ public class TMemoryTransport extends TTransport {
    */
   public byte[] getOutput() {
     int length = 0;
-    for (ByteBuffer byteBuffer : outputBuffer) {
-      length += byteBuffer.limit();
+    for (byte[] bytes : outputBuffer) {
+      length += bytes.length;
     }
     byte[] output = new byte[length];
     int position = 0;
-    for (ByteBuffer byteBuffer : outputBuffer) {
-      byteBuffer.get(output, position, byteBuffer.limit());
-      position += byteBuffer.limit();
+    for (byte[] bytes : outputBuffer) {
+      System.arraycopy(bytes, 0, output, position, bytes.length);
+      position += bytes.length;
     }
     return output;
   }

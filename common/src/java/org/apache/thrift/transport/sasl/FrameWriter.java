@@ -24,18 +24,16 @@ import org.apache.thrift.transport.TNonblockingTransport;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
-public abstract class SaslWriter {
+/**
+ * Write frame (header and payload) to transport in a nonblocking way.
+ */
+public abstract class FrameWriter {
 
-  protected final TNonblockingTransport transport;
   protected ByteBuffer byteBuffer;
-
-  protected SaslWriter(TNonblockingTransport transport) {
-    this.transport = transport;
-  }
 
   /**
    * Provide (maybe empty) header and payload to the writer. This can be called only when isComplete
-   * returns true.
+   * returns true (last frame has been written out).
    *
    * @param header Some extra header bytes (without the 4 bytes for payload length), which will be
    *               the start of the frame. It can be empty, depending on the message format.
@@ -43,9 +41,10 @@ public abstract class SaslWriter {
    * @return this writer
    * @throws IllegalStateException if it is called when isComplete returns false.
    */
-  public SaslWriter withHeaderAndPayload(byte[]header, byte[] payload) throws IllegalStateException {
+  public FrameWriter withHeaderAndPayload(byte[]header, byte[] payload) {
     if (!isComplete()) {
-      throw new IllegalStateException("Previsous write is not yet complete, with " + byteBuffer.remaining() + " bytes left.");
+      throw new IllegalStateException("Previsous write is not yet complete, with " +
+          byteBuffer.remaining() + " bytes left.");
     }
     if (payload == null) {
       payload = new byte[0];
@@ -55,31 +54,13 @@ public abstract class SaslWriter {
     return this;
   }
 
-  /**
-   * Provide all the bytes of the frame (header and payload) to the writer.
-   *
-   * @param frameBytes the frame as a byte array.
-   * @return this writer.
-   * @throws IllegalStateException if it is called when isComplete returns false.
-   */
-  public SaslWriter withFrameBytes(byte[] frameBytes) {
-    if (!isComplete()) {
-      throw new IllegalStateException("Previsous write is not yet complete, with " + byteBuffer.remaining() + " bytes left.");
-    }
-    if (frameBytes == null) {
-      frameBytes = new byte[0];
-    }
-    byteBuffer = ByteBuffer.wrap(frameBytes);
-    return this;
-  }
-
   protected abstract ByteBuffer buildBuffer(byte[] header, byte[] payload);
 
   /**
    * Nonblocking write to the underlying transport.
    * @throws IOException
    */
-  public void write() throws IOException {
+  public void write(TNonblockingTransport transport) throws IOException {
     if (byteBuffer.hasRemaining()) {
       transport.write(byteBuffer);
     }

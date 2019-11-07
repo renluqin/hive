@@ -20,28 +20,11 @@
 package org.apache.thrift.transport.sasl;
 
 /**
- * The header for data frame sent over a sasl transport.
+ * Read frames for sasl negotiatiions.
  */
-public class DataFrameHeader extends FixedSizeSaslHeader {
-  public static final int PAYLOAD_LENGTH_BYTES = 4;
+public class SaslNegotiationFrameReader extends FrameReader<SaslNegotiationHeaderReader> {
 
-  private int payloadSize;
-
-  @Override
-  protected int headerSize() {
-    return PAYLOAD_LENGTH_BYTES;
-  }
-
-  @Override
-  protected void onComplete() throws TInvalidSaslFrameException {
-    payloadSize = byteBuffer.getInt(0);
-    if (payloadSize < 0) {
-      throw new TInvalidSaslFrameException("Payload size is negative: " + payloadSize);
-    }
-  }
-
-  @Override
-  public int payloadSize() {
-    return payloadSize;
+  public SaslNegotiationFrameReader() {
+    super(new SaslNegotiationHeaderReader());
   }
 }
