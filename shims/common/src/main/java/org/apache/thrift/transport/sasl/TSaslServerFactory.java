@@ -19,6 +19,7 @@
 
 package org.apache.thrift.transport.sasl;
 
+import javax.security.auth.callback.CallbackHandler;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
@@ -41,6 +42,11 @@ public class TSaslServerFactory {
 
   public void addSaslMechanism(TSaslServerDefinition definition) {
     saslMechanisms.put(definition.mechanism, definition);
+  }
+
+  public void addSaslMechanism(String mechanism, String protocol, String serverName, Map<String, String> props,
+                               CallbackHandler cbh) {
+    addSaslMechanism(new TSaslServerDefinition(mechanism, protocol, serverName, props, cbh));
   }
 
   public ServerSaslPeer getSaslPeer(String mechanism) throws TSaslNegotiationException {

@@ -67,9 +67,7 @@ public interface SaslPeer {
    * @return wrapped bytes.
    * @throws TTransportException if failure.
    */
-  default byte[] wrap(byte[] data) throws TTransportException {
-    return wrap(data, 0, data.length);
-  }
+  byte[] wrap(byte[] data) throws TTransportException;
 
   /**
    * Unwrap protected data to raw bytes.
@@ -89,9 +87,7 @@ public interface SaslPeer {
    * @return raw bytes.
    * @throws TTransportException if failure.
    */
-  default byte[] unwrap(byte[] data) throws TTransportException {
-    return unwrap(data, 0, data.length);
-  }
+  byte[] unwrap(byte[] data) throws TTransportException;
 
   /**
    * Close this peer and release resources.

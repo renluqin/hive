@@ -21,8 +21,6 @@ package org.apache.thrift.transport.sasl;
 
 import org.apache.thrift.transport.TTransportException;
 
-import javax.security.sasl.SaslException;
-
 /**
  * Exception for sasl negotiation errors.
  */
@@ -35,7 +33,7 @@ public class TSaslNegotiationException extends TTransportException {
     this.error = error;
   }
 
-  public TSaslNegotiationException(ErrorType error, String summary, SaslException cause) {
+  public TSaslNegotiationException(ErrorType error, String summary, Throwable cause) {
     super(summary, cause);
     this.error = error;
   }
@@ -59,6 +57,7 @@ public class TSaslNegotiationException extends TTransportException {
   }
 
   public enum ErrorType {
+    UNKNOWN(NegotiationStatus.ERROR),
     // Cannot read correct sasl frames from the connection => Send "ERROR" status byte to peer
     PROTOCOL_ERROR(NegotiationStatus.ERROR),
     // Peer is using unsupported sasl mechanisms => Send "BAD" status byte to peer

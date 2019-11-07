@@ -75,12 +75,22 @@ public class ServerSaslPeer implements SaslPeer {
   }
 
   @Override
+  public byte[] wrap(byte[] data) throws TTransportException {
+    return wrap(data, 0, data.length);
+  }
+
+  @Override
   public byte[] wrap(byte[] data, int offset, int length) throws TTransportException {
     try {
       return saslServer.wrap(data, offset, length);
     } catch (SaslException e) {
       throw new TTransportException("Failed to wrap data", e);
     }
+  }
+
+  @Override
+  public byte[] unwrap(byte[] data) throws TTransportException {
+    return unwrap(data, 0, data.length);
   }
 
   @Override

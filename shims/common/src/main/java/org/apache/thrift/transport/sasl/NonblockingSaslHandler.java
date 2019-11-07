@@ -354,7 +354,7 @@ public class NonblockingSaslHandler {
       nextPhase = Phase.WRITING_RESPONSE;
     } catch (TTransportException e) {
       failIO(e);
-    } catch (TException e) {
+    } catch (Exception e) {
       fail(e);
     }
   }

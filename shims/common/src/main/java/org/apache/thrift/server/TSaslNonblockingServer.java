@@ -161,20 +161,16 @@ public class TSaslNonblockingServer extends TServer {
         selectedKeyItr.remove();
         if (selected.isAcceptable()) {
           try {
-            while (true) {
-              // Accept all available connections from the backlog.
-              TNonblockingTransport connection = (TNonblockingTransport) serverTransport.accept();
-              if (connection == null) {
-                break;
-              }
-              if (!networkThreadPool.acceptNewConnection(connection)) {
-                LOGGER.error("Network thread does not accept: " + connection);
-                connection.close();
-              }
+            TNonblockingTransport connection = (TNonblockingTransport) serverTransport.accept();
+            if (!networkThreadPool.acceptNewConnection(connection)) {
+              LOGGER.error("Network thread does not accept: " + connection);
+              connection.close();
             }
           } catch (TTransportException e) {
             LOGGER.warn("Failed to accept incoming connection.", e);
           }
+        } else {
+          LOGGER.error("Not acceptable selection: " + selected.channel());
         }
       }
     }

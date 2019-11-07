@@ -19,6 +19,7 @@
 
 package org.apache.thrift.transport.sasl;
 
+import org.apache.thrift.TException;
 import org.apache.thrift.TProcessor;
 
 /**
@@ -33,7 +34,7 @@ public class TSaslProcessorFactory {
     this.processor = processor;
   }
 
-  public TProcessor getProcessor(NonblockingSaslHandler saslHandler) {
+  public TProcessor getProcessor(NonblockingSaslHandler saslHandler) throws TException {
     return processor;
   }
 }
