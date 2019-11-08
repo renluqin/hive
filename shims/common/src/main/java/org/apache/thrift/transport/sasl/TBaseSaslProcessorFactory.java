@@ -19,14 +19,18 @@
 
 package org.apache.thrift.transport.sasl;
 
-import org.apache.thrift.TException;
 import org.apache.thrift.TProcessor;
 
-/**
- * Get processor for a given state machine, so that users can customize the behavior of a TProcessor
- * by interacting with the state machine.
- */
-public interface TSaslProcessorFactory {
+public class TBaseSaslProcessorFactory implements TSaslProcessorFactory {
 
-  TProcessor getProcessor(NonblockingSaslHandler saslHandler) throws TException;
+  private final TProcessor processor;
+
+  public TBaseSaslProcessorFactory(TProcessor processor) {
+    this.processor = processor;
+  }
+
+  @Override
+  public TProcessor getProcessor(NonblockingSaslHandler saslHandler) {
+    return processor;
+  }
 }

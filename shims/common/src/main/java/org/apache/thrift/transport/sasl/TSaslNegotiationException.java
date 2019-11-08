@@ -57,7 +57,8 @@ public class TSaslNegotiationException extends TTransportException {
   }
 
   public enum ErrorType {
-    UNKNOWN(NegotiationStatus.ERROR),
+    // Unexpected system internal error during negotiation (e.g. sasl initialization failure)
+    INTERNAL(NegotiationStatus.ERROR),
     // Cannot read correct sasl frames from the connection => Send "ERROR" status byte to peer
     PROTOCOL_ERROR(NegotiationStatus.ERROR),
     // Peer is using unsupported sasl mechanisms => Send "BAD" status byte to peer

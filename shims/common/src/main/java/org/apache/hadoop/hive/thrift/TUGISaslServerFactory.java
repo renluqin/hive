@@ -7,7 +7,7 @@ import org.apache.thrift.transport.sasl.TSaslServerFactory;
 
 import java.security.PrivilegedExceptionAction;
 
-import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.UNKNOWN;
+import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.INTERNAL;
 
 public class TUGISaslServerFactory extends TSaslServerFactory {
 
@@ -31,7 +31,7 @@ public class TUGISaslServerFactory extends TSaslServerFactory {
             if (cause instanceof TSaslNegotiationException) {
                 throw (TSaslNegotiationException) cause;
             }
-            throw new TSaslNegotiationException(UNKNOWN, "Failed to create sasl server", e);
+            throw new TSaslNegotiationException(INTERNAL, "Failed to create sasl server", e);
         }
     }
 }

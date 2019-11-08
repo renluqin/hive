@@ -26,6 +26,7 @@ import org.apache.thrift.transport.TNonblockingTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.sasl.NonblockingSaslHandler;
 import org.apache.thrift.transport.sasl.NonblockingSaslHandler.Phase;
+import org.apache.thrift.transport.sasl.TBaseSaslProcessorFactory;
 import org.apache.thrift.transport.sasl.TSaslProcessorFactory;
 import org.apache.thrift.transport.sasl.TSaslServerDefinition;
 import org.apache.thrift.transport.sasl.TSaslServerFactory;
@@ -444,7 +445,7 @@ public class TSaslNonblockingServer extends TServer {
     }
 
     public Args processor(TProcessor processor) {
-      saslProcessorFactory = new TSaslProcessorFactory(processor);
+      saslProcessorFactory = new TBaseSaslProcessorFactory(processor);
       return this;
     }
 
@@ -458,7 +459,7 @@ public class TSaslNonblockingServer extends TServer {
 
     public Args addSaslMechanism(String mechanism, String protocol, String serverName,
                                  Map<String, String> props, CallbackHandler cbh) {
-      saslServerFactory.addSaslMechanism(new TSaslServerDefinition(mechanism, protocol, serverName, props, cbh));
+      saslServerFactory.addSaslMechanism(mechanism, protocol, serverName, props, cbh);
       return this;
     }
 

@@ -70,6 +70,7 @@ import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.TTransportFactory;
 import org.apache.thrift.transport.sasl.NonblockingSaslHandler;
+import org.apache.thrift.transport.sasl.TBaseSaslProcessorFactory;
 import org.apache.thrift.transport.sasl.TSaslProcessorFactory;
 import org.apache.thrift.transport.sasl.TSaslServerFactory;
 
@@ -705,12 +706,13 @@ public class HadoopThriftAuthBridge {
       }
     }
 
-    protected class TUGISaslProcessorFactory extends TSaslProcessorFactory {
+    protected class TUGISaslProcessorFactory implements TSaslProcessorFactory {
 
+      private final TSaslProcessorFactory baseFactory;
       private boolean useProxy;
 
       TUGISaslProcessorFactory(TProcessor processor, boolean useProxy) {
-        super(processor);
+        baseFactory = new TBaseSaslProcessorFactory(processor);
         this.useProxy = useProxy;
       }
 
@@ -737,7 +739,7 @@ public class HadoopThriftAuthBridge {
         String endUser = authId;
         if (AuthMethod.PLAIN.getMechanismName().equalsIgnoreCase(mechanismName)) {
           remoteUser.set(endUser);
-          return super.getProcessor(saslHandler);
+          return baseFactory.getProcessor(saslHandler);
         }
         if(AuthMethod.TOKEN.getMechanismName().equalsIgnoreCase(mechanismName)) {
           try {
@@ -758,13 +760,13 @@ public class HadoopThriftAuthBridge {
             ProxyUsers.authorize(clientUgi, getRemoteAddress().getHostAddress());
             remoteUser.set(clientUgi.getShortUserName());
             LOG.debug("Set remoteUser :" + remoteUser.get());
-            return new TUGIProcessor(clientUgi, super.getProcessor(saslHandler));
+            return new TUGIProcessor(clientUgi, baseFactory.getProcessor(saslHandler));
           } else {
             // use the short user name for the request
             UserGroupInformation endUserUgi = UserGroupInformation.createRemoteUser(endUser);
             remoteUser.set(endUserUgi.getShortUserName());
             LOG.debug("Set remoteUser :" + remoteUser.get() + ", from endUser :" + endUser);
-            return super.getProcessor(saslHandler);
+            return baseFactory.getProcessor(saslHandler);
           }
         } catch (RuntimeException rte) {
           if (rte.getCause() instanceof TException) {

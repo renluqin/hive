@@ -19,12 +19,13 @@
 
 package org.apache.thrift.transport.sasl;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.sasl.Sasl;
 import javax.security.sasl.SaslException;
 import javax.security.sasl.SaslServer;
-import java.util.HashMap;
-import java.util.Map;
 
 import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.MECHANISME_MISMATCH;
 import static org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType.PROTOCOL_ERROR;
@@ -40,13 +41,11 @@ public class TSaslServerFactory {
     this.saslMechanisms = new HashMap<>();
   }
 
-  public void addSaslMechanism(TSaslServerDefinition definition) {
+  public void addSaslMechanism(String mechanism, String protocol, String serverName,
+                               Map<String, String> props, CallbackHandler cbh) {
+    TSaslServerDefinition definition = new TSaslServerDefinition(mechanism, protocol, serverName,
+        props, cbh);
     saslMechanisms.put(definition.mechanism, definition);
-  }
-
-  public void addSaslMechanism(String mechanism, String protocol, String serverName, Map<String, String> props,
-                               CallbackHandler cbh) {
-    addSaslMechanism(new TSaslServerDefinition(mechanism, protocol, serverName, props, cbh));
   }
 
   public ServerSaslPeer getSaslPeer(String mechanism) throws TSaslNegotiationException {
@@ -55,11 +54,11 @@ public class TSaslServerFactory {
     }
     TSaslServerDefinition saslDef = saslMechanisms.get(mechanism);
     try {
-      SaslServer saslServer = Sasl.createSaslServer(saslDef.mechanism, saslDef.protocol, saslDef.serverName,
-          saslDef.props, saslDef.cbh);
+      SaslServer saslServer = Sasl.createSaslServer(saslDef.mechanism, saslDef.protocol,
+          saslDef.serverName, saslDef.props, saslDef.cbh);
       return new ServerSaslPeer(saslServer);
     } catch (SaslException e) {
-      throw new TSaslNegotiationException(PROTOCOL_ERROR, "Failed to create sasl server " + mechanism, e);
+      throw new TSaslNegotiationException(PROTOCOL_ERROR, "Fail to create sasl server " + mechanism, e);
     }
   }
 }
