@@ -214,6 +214,8 @@ import org.apache.thrift.transport.TServerSocket;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.TTransportFactory;
+import org.apache.thrift.transport.sasl.TSaslProcessorFactory;
+import org.apache.thrift.transport.sasl.TSaslServerFactory;
 
 import javax.jdo.JDOException;
 import java.io.IOException;
@@ -6707,30 +6709,17 @@ public class HiveMetaStore extends ThriftHiveMetastore {
 
         if (nonblocking) {
           LOG.info("Starting DB backed MetaStore Server in Secure Mode");
-          transFactory = saslServer.createTransportFactory();
-          processor = saslServer.wrapProcessor(
-                  new ThriftHiveMetastore.Processor<IHMSHandler>(handler));
+          processor = new ThriftHiveMetastore.Processor<IHMSHandler>(handler);
           TNonblockingServerSocket serverTransport = new TNonblockingServerSocket(port);
-          Map<String, String> saslProps = MetaStoreUtils.getMetaStoreSaslProperties(conf);
-          UserGroupInformation realUgi = saslServer.getRealUgi();
-          String kerberosName = realUgi.getUserName();
-          final String names[] = SaslRpcServer.splitKerberosName(kerberosName);
-          if (names.length != 3) {
-            throw new TTransportException("Kerberos principal should have 3 parts: " + kerberosName);
-          }
+          TSaslServerFactory saslServerFactory = saslServer.createSaslServerFactory(bridge.getHadoopSaslProperties(conf));
+          TSaslProcessorFactory saslProcessorFactory = saslServer.createSaslProcessorFactory(processor);
           TSaslNonblockingServer.Args serverConf = new TSaslNonblockingServer.Args(serverTransport)
-                  .processor(processor)
-                  .transportFactory(transFactory)
+                  .saslServerFactory(saslServerFactory)
+                  .saslProcessorFactory(saslProcessorFactory)
                   .protocolFactory(protocolFactory)
                   .networkThreads(networkThreads)
                   .saslThreads(saslThreads)
-                  .processingThreads(processingThreads)
-                  .addSaslMechanism(SaslRpcServer.AuthMethod.KERBEROS.getMechanismName(),
-                          names[0], names[1],  // two parts of kerberos principal
-                          saslProps, new SaslRpcServer.SaslGssCallbackHandler())
-                  .addSaslMechanism(SaslRpcServer.AuthMethod.DIGEST.getMechanismName(), null,
-                          SaslRpcServer.SASL_DEFAULT_REALM, saslProps,
-                          new HadoopThriftAuthBridge.Server.SaslDigestCallbackHandler(saslServer.getSecretManager()));
+                  .processingThreads(processingThreads);
           TSaslNonblockingServer server = new TSaslNonblockingServer(serverConf);
           server.setServerEventHandler(tServerEventHandler);
           HMSHandler.LOG.info("Started the new metaserver on port [" + port

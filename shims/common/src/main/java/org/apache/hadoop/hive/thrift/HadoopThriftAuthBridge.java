@@ -21,7 +21,9 @@ import static org.apache.hadoop.fs.CommonConfigurationKeys.HADOOP_SECURITY_AUTHE
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.security.PrivilegedAction;
 import java.security.PrivilegedExceptionAction;
 import java.util.Locale;
@@ -44,7 +46,6 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.hive.shims.ShimLoader;
 import org.apache.hadoop.hive.shims.Utils;
 import org.apache.hadoop.hive.thrift.client.TUGIAssumingTransport;
 import org.apache.hadoop.security.SaslRpcServer;
@@ -61,12 +62,16 @@ import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.thrift.TException;
 import org.apache.thrift.TProcessor;
 import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TNonblockingSocket;
 import org.apache.thrift.transport.TSaslClientTransport;
 import org.apache.thrift.transport.TSaslServerTransport;
 import org.apache.thrift.transport.TSocket;
 import org.apache.thrift.transport.TTransport;
 import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.TTransportFactory;
+import org.apache.thrift.transport.sasl.NonblockingSaslHandler;
+import org.apache.thrift.transport.sasl.TSaslProcessorFactory;
+import org.apache.thrift.transport.sasl.TSaslServerFactory;
 
 /**
  * Functions that bridge Thrift's SASL transports to Hadoop's
@@ -377,6 +382,28 @@ public class HadoopThriftAuthBridge {
       return secretManager;
     }
 
+    public TSaslServerFactory createSaslServerFactory(Map<String, String> saslProps) throws TTransportException {
+      // Parse out the kerberos principal, host, realm.
+      String kerberosName = realUgi.getUserName();
+      final String names[] = SaslRpcServer.splitKerberosName(kerberosName);
+      if (names.length != 3) {
+        throw new TTransportException("Kerberos principal should have 3 parts: " + kerberosName);
+      }
+      TSaslServerFactory saslServerFactory = new TUGISaslServerFactory(realUgi);
+      saslServerFactory.addSaslMechanism(AuthMethod.KERBEROS.getMechanismName(),
+              names[0], names[1],  // two parts of kerberos principal
+              saslProps,
+              new SaslRpcServer.SaslGssCallbackHandler());
+      saslServerFactory.addSaslMechanism(AuthMethod.DIGEST.getMechanismName(),
+              null, SaslRpcServer.SASL_DEFAULT_REALM,
+              saslProps, new SaslDigestCallbackHandler(secretManager));
+      return saslServerFactory;
+    }
+
+    public TSaslProcessorFactory createSaslProcessorFactory(TProcessor baseProcessor) {
+      return new TUGISaslProcessorFactory(baseProcessor, true);
+    }
+
     /**
      * Create a TTransportFactory that, upon connection of a client socket,
      * negotiates a Kerberized SASL transport. The resulting TTransportFactory
@@ -673,6 +700,113 @@ public class HadoopThriftAuthBridge {
                   + "canonicalized client ID: " + username);
             }
             ac.setAuthorizedID(authzid);
+          }
+        }
+      }
+    }
+
+    protected class TUGISaslProcessorFactory extends TSaslProcessorFactory {
+
+      private boolean useProxy;
+
+      TUGISaslProcessorFactory(TProcessor processor, boolean useProxy) {
+        super(processor);
+        this.useProxy = useProxy;
+      }
+
+      @Override
+      public TProcessor getProcessor(NonblockingSaslHandler saslHandler) throws TException {
+        TNonblockingSocket underlyingSocket = (TNonblockingSocket) saslHandler.getUnderlyingTransport();
+        try {
+          SocketAddress remoteAddress = underlyingSocket.getSocketChannel().getRemoteAddress();
+          if (remoteAddress instanceof InetSocketAddress) {
+            InetSocketAddress socketAddress = (InetSocketAddress) remoteAddress;
+            Server.remoteAddress.set(socketAddress.getAddress());
+          } else {
+            throw new IllegalArgumentException("Not an InetSocketAddress " + remoteAddress);
+          }
+        } catch (IOException e) {
+          throw new TException("Failed to get remote address", e);
+        }
+
+        SaslServer saslServer = saslHandler.getSaslServer();
+        String mechanismName = saslServer.getMechanismName();
+        userAuthMechanism.set(mechanismName);
+
+        String authId = saslServer.getAuthorizationID();
+        String endUser = authId;
+        if (AuthMethod.PLAIN.getMechanismName().equalsIgnoreCase(mechanismName)) {
+          remoteUser.set(endUser);
+          return super.getProcessor(saslHandler);
+        }
+        if(AuthMethod.TOKEN.getMechanismName().equalsIgnoreCase(mechanismName)) {
+          try {
+            TokenIdentifier tokenId = SaslRpcServer.getIdentifier(authId, secretManager);
+            endUser = tokenId.getUser().getUserName();
+            authenticationMethod.set(AuthenticationMethod.TOKEN);
+          } catch (InvalidToken e) {
+            throw new TException(e.getMessage());
+          }
+        } else {
+          authenticationMethod.set(AuthenticationMethod.KERBEROS);
+        }
+
+        UserGroupInformation clientUgi = null;
+        try {
+          if (useProxy) {
+            clientUgi = UserGroupInformation.createProxyUser(endUser, UserGroupInformation.getLoginUser());
+            ProxyUsers.authorize(clientUgi, getRemoteAddress().getHostAddress());
+            remoteUser.set(clientUgi.getShortUserName());
+            LOG.debug("Set remoteUser :" + remoteUser.get());
+            return new TUGIProcessor(clientUgi, super.getProcessor(saslHandler));
+          } else {
+            // use the short user name for the request
+            UserGroupInformation endUserUgi = UserGroupInformation.createRemoteUser(endUser);
+            remoteUser.set(endUserUgi.getShortUserName());
+            LOG.debug("Set remoteUser :" + remoteUser.get() + ", from endUser :" + endUser);
+            return super.getProcessor(saslHandler);
+          }
+        } catch (RuntimeException rte) {
+          if (rte.getCause() instanceof TException) {
+            throw (TException)rte.getCause();
+          }
+          throw rte;
+        } catch (IOException ioe) {
+          throw new RuntimeException(ioe); // unexpected!
+        }
+      }
+    }
+
+    protected static class TUGIProcessor implements TProcessor {
+
+      private final UserGroupInformation user;
+      private final TProcessor baseProcessor;
+
+      TUGIProcessor(UserGroupInformation user, TProcessor baseProcessor) {
+        this.user = user;
+        this.baseProcessor = baseProcessor;
+      }
+
+      @Override
+      public boolean process(final TProtocol in, final TProtocol out) throws TException {
+        try {
+          return user.doAs(new PrivilegedExceptionAction<Boolean>() {
+            @Override
+            public Boolean run() throws TException {
+              return baseProcessor.process(in, out);
+            }
+          });
+        } catch (Throwable e) {
+          Throwable cause = e.getCause();
+          if (cause instanceof TException) {
+            throw (TException) cause;
+          }
+          throw new TException("Processing failed", e);
+        } finally {
+          try {
+            FileSystem.closeAllForUGI(user);
+          } catch(IOException exception) {
+            LOG.error("Could not clean up file-system handles for UGI: " + user, exception);
           }
         }
       }
