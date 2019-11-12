@@ -45,34 +45,32 @@ public abstract class FrameReader<T extends FrameHeaderReader> {
    * data.
    *
    * @param transport TTransport
-   * @return bytes read
+   * @return true if current frame is complete after read.
    * @throws TSaslNegotiationException if fail to read back a valid sasl negotiation message.
    * @throws TTransportException if io error.
    */
-  public int read(TTransport transport) throws TSaslNegotiationException, TTransportException {
-    int got = 0;
+  public boolean read(TTransport transport) throws TSaslNegotiationException, TTransportException {
     if (!header.isComplete()) {
-      got += readHeader(transport);
-      if (header.isComplete()) {
+      if (readHeader(transport)) {
         payload = ByteBuffer.allocate(header.payloadSize());
       } else {
-        return got;
+        return false;
       }
     }
-    if (header.payloadSize() > 0) {
-      got += readPayload(transport);
+    if (header.payloadSize() == 0) {
+      return true;
     }
-    return got;
+    return readPayload(transport);
   }
 
   /**
    * (Nonblocking) Try to read available header bytes from transport.
    *
-   * @return The bytes read out of the transport.
+   * @return true if header is complete after read.
    * @throws TSaslNegotiationException if fail to read back a validd sasl negotiation header.
    * @throws TTransportException if io error.
    */
-  private int readHeader(TTransport transport) throws TSaslNegotiationException, TTransportException {
+  private boolean readHeader(TTransport transport) throws TSaslNegotiationException, TTransportException {
     return header.read(transport);
   }
 
@@ -80,11 +78,12 @@ public abstract class FrameReader<T extends FrameHeaderReader> {
    * (Nonblocking) Try to read available
    *
    * @param transport underlying transport.
-   * @return number of bytes read out of the socket.
+   * @return true if payload is complete after read.
    * @throws TTransportException if io error.
    */
-  private int readPayload(TTransport transport) throws TTransportException {
-    return readAvailable(transport, payload);
+  private boolean readPayload(TTransport transport) throws TTransportException {
+    readAvailable(transport, payload);
+    return payload.hasRemaining();
   }
 
   /**
@@ -144,32 +143,18 @@ public abstract class FrameReader<T extends FrameHeaderReader> {
    * @throws TTransportException if io error
    */
   static int readAvailable(TTransport transport, ByteBuffer recipient) throws TTransportException {
-    return fillRecipient(transport, recipient, false);
-  }
-
-  /**
-   * Read from the transport into the byte buffer, and block until the byte buffer is full filled.
-   *
-   * @param transport TTransport
-   * @param recipient ByteBuffer
-   * @return number of bytes read out of the transport
-   * @throws TTransportException if io error
-   */
-  static int readAll(TTransport transport, ByteBuffer recipient) throws TTransportException {
-    return fillRecipient(transport, recipient, true);
-  }
-
-  private static int fillRecipient(TTransport transport, ByteBuffer recipient, boolean blocking) throws TTransportException {
     if (!recipient.hasRemaining()) {
-      throw new IllegalStateException("Trying to fill a full recipient with " + recipient.limit() + " bytes");
+      throw new IllegalStateException("Trying to fill a full recipient with " + recipient.limit()
+          + " bytes");
     }
     int currentPosition = recipient.position();
     byte[] bytes = recipient.array();
     int offset = recipient.arrayOffset() + currentPosition;
     int expectedLength = recipient.remaining();
-    int got = blocking ? transport.readAll(bytes, offset, expectedLength) : transport.read(bytes, offset, expectedLength);
+    int got = transport.read(bytes, offset, expectedLength);
     if (got < 0) {
-      throw new TEOFException("Transport is closed, while trying to read " + expectedLength + " bytes");
+      throw new TEOFException("Transport is closed, while trying to read " + expectedLength +
+          " bytes");
     }
     recipient.position(currentPosition + got);
     return got;

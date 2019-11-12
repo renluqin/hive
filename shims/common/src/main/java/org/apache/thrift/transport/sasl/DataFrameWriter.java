@@ -19,9 +19,12 @@
 
 package org.apache.thrift.transport.sasl;
 
+import java.nio.ByteBuffer;
+
+import org.apache.thrift.EncodingUtils;
 import org.apache.thrift.utils.StringUtils;
 
-import java.nio.ByteBuffer;
+import static org.apache.thrift.transport.sasl.DataFrameHeaderReader.PAYLOAD_LENGTH_BYTES;
 
 /**
  * Write frames of thrift messages. It expects an empty/null header to be provided with a payload
@@ -30,13 +33,28 @@ import java.nio.ByteBuffer;
 public class DataFrameWriter extends FrameWriter {
 
   @Override
-  protected ByteBuffer buildBuffer(byte[] header, byte[] payload) {
-    if (header != null && header.length > 0) {
-      throw new IllegalArgumentException("Header should be empty, but got " +
-          StringUtils.bytesToHexString(header));
+  public void withOnlyPayload(byte[] payload, int offset, int length) {
+    if (!isComplete()) {
+      throw new IllegalStateException("Previsous write is not yet complete, with " +
+          frameBytes.remaining() + " bytes left.");
     }
-    return ByteBuffer.allocate(DataFrameHeaderReader.PAYLOAD_LENGTH_BYTES + payload.length)
-        .putInt(payload.length)
-        .put(payload);
+    frameBytes = buildFrameWithPayload(payload, offset, length);
+  }
+
+  @Override
+  protected ByteBuffer buildFrame(byte[] header, int headerOffset, int headerLength,
+                                  byte[] payload, int payloadOffset, int payloadLength) {
+    if (header != null && headerLength > 0) {
+      throw new IllegalArgumentException("Extra header [" + StringUtils.bytesToHexString(header) +
+          "] offset " + payloadOffset + " length " + payloadLength);
+    }
+    return buildFrameWithPayload(payload, payloadOffset, payloadLength);
+  }
+
+  private ByteBuffer buildFrameWithPayload(byte[] payload, int offset, int length) {
+    byte[] bytes = new byte[PAYLOAD_LENGTH_BYTES + length];
+    EncodingUtils.encodeBigEndian(length, bytes, 0);
+    System.arraycopy(payload, offset, bytes, PAYLOAD_LENGTH_BYTES, length);
+    return ByteBuffer.wrap(bytes);
   }
 }

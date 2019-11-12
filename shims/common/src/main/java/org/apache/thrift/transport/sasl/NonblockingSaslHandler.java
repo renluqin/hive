@@ -19,6 +19,13 @@
 
 package org.apache.thrift.transport.sasl;
 
+import java.io.IOException;
+import java.nio.channels.SelectionKey;
+import java.nio.charset.StandardCharsets;
+
+import javax.security.sasl.SaslServer;
+
+import org.apache.thrift.TByteArrayOutputStream;
 import org.apache.thrift.TProcessor;
 import org.apache.thrift.protocol.TProtocol;
 import org.apache.thrift.protocol.TProtocolFactory;
@@ -30,12 +37,6 @@ import org.apache.thrift.transport.TTransportException;
 import org.apache.thrift.transport.sasl.TSaslNegotiationException.ErrorType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.channels.SelectionKey;
-import java.nio.charset.StandardCharsets;
-
-import javax.security.sasl.SaslServer;
 
 import static org.apache.thrift.transport.sasl.NegotiationStatus.COMPLETE;
 import static org.apache.thrift.transport.sasl.NegotiationStatus.OK;
@@ -83,11 +84,7 @@ public class NonblockingSaslHandler {
   // IO for request from and response to the socket
   private DataFrameReader requestReader;
   private DataFrameWriter responseWriter;
-  // Intermediate io used by TProcessor.
-  private TMemoryTransport memoryTransport;
-  // Thrift protocols
-  private TProtocol requestProtocol;
-  private TProtocol responseProtocol;
+  // If sasl is negotiated for integrity/confidentiality protection
   private boolean dataProtected;
 
   public NonblockingSaslHandler(SelectionKey selectionKey, TNonblockingTransport underlyingTransport,
@@ -196,8 +193,6 @@ public class NonblockingSaslHandler {
    * When current phase is finished, it's expected to call this method first before running the
    * state machine again.
    * By calling this, "next phase" is marked as started (and not done), thus is ready to run.
-   * Also, some state clean up (especially, io buffers clean up) will be done in this method to
-   * prepare for the run.
    *
    * @throws IllegalArgumentException if current phase is not yet done.
    */
@@ -209,12 +204,6 @@ public class NonblockingSaslHandler {
     switch (nextPhase) {
       case INITIIALIIZING:
         throw new IllegalStateException("INITIALIZING cannot be the next phase of " + currentPhase);
-      case READING_SASL_RESPONSE:
-        saslResponse.clear();
-        break;
-      case READING_REQUEST:
-        requestReader.clear();
-        break;
       default:
     }
     // If next phase's interest is not the same as current,  nor the same as the selection key,
@@ -268,6 +257,7 @@ public class NonblockingSaslHandler {
         }
         String mechanism = new String(saslResponse.getPayload(), StandardCharsets.UTF_8);
         saslPeer = saslServerFactory.getSaslPeer(mechanism);
+        saslResponse.clear();
         nextPhase = Phase.READING_SASL_RESPONSE;
       }
     } catch (TSaslNegotiationException e) {
@@ -278,30 +268,26 @@ public class NonblockingSaslHandler {
   }
 
   private void handleReadingSaslResponse() {
-    if (!saslResponse.isComplete()) {
-      try {
-        saslResponse.read(underlyingTransport);
-        if (saslResponse.isComplete()) {
-          nextPhase = Phase.EVALUATING_SASL_RESPONSE;
-        }
-      } catch (TSaslNegotiationException e) {
-        failSaslNegotiation(e);
-      } catch (TTransportException e) {
-        failIO(e);
+    try {
+      saslResponse.read(underlyingTransport);
+      if (saslResponse.isComplete()) {
+        nextPhase = Phase.EVALUATING_SASL_RESPONSE;
       }
+    } catch (TSaslNegotiationException e) {
+      failSaslNegotiation(e);
+    } catch (TTransportException e) {
+      failIO(e);
     }
   }
 
   private void handleReadingRequest() {
-    if (!requestReader.isComplete()) {
-      try {
-        requestReader.read(underlyingTransport);
-        if (requestReader.isComplete()) {
-          nextPhase = Phase.PROCESSING;
-        }
-      } catch (TTransportException e) {
-        failIO(e);
+    try {
+      requestReader.read(underlyingTransport);
+      if (requestReader.isComplete()) {
+        nextPhase = Phase.PROCESSING;
       }
+    } catch (TTransportException e) {
+      failIO(e);
     }
   }
 
@@ -314,7 +300,9 @@ public class NonblockingSaslHandler {
       return;
     }
     try {
-      byte[] newChallenge = saslPeer.evaluate(saslResponse.getPayload());
+      byte[] response = saslResponse.getPayload();
+      saslResponse.clear();
+      byte[] newChallenge = saslPeer.evaluate(response);
       if (saslPeer.isAuthenticated()) {
         dataProtected = saslPeer.isDataProtected();
         saslChallenge.withHeaderAndPayload(new byte[]{COMPLETE.getValue()}, newChallenge);
@@ -330,9 +318,12 @@ public class NonblockingSaslHandler {
 
   private void executeProcessing() {
     try {
-      byte[] rawInput = dataProtected ?
-          saslPeer.unwrap(requestReader.getPayload()) : requestReader.getPayload();
-      memoryTransport.reset(rawInput);
+      byte[] inputPayload = requestReader.getPayload();
+      requestReader.clear();
+      byte[] rawInput = dataProtected ? saslPeer.unwrap(inputPayload) : inputPayload;
+      TMemoryTransport memoryTransport = new TMemoryTransport(rawInput);
+      TProtocol requestProtocol = inputProtocolFactory.getProtocol(memoryTransport);
+      TProtocol responseProtocol = outputProtocolFactory.getProtocol(memoryTransport);
 
       if (eventHandler != null) {
         if (!serverContextCreated) {
@@ -344,13 +335,18 @@ public class NonblockingSaslHandler {
 
       TProcessor processor = processorFactory.getProcessor(this);
       processor.process(requestProtocol, responseProtocol);
-      byte[] rawOutput = memoryTransport.getOutput();
-      if (rawOutput.length == 0) {
+      TByteArrayOutputStream rawOutput = memoryTransport.getOutput();
+      if (rawOutput.len() == 0) {
         // This is a oneway request, no response to send back. Waiting for next incoming request.
         nextPhase = Phase.READING_REQUEST;
         return;
       }
-      responseWriter.withHeaderAndPayload(null, dataProtected ? saslPeer.wrap(rawOutput) : rawOutput);
+      if (dataProtected) {
+        byte[] outputPayload = saslPeer.wrap(rawOutput.get(), 0, rawOutput.len());
+        responseWriter.withOnlyPayload(outputPayload);
+      } else {
+        responseWriter.withOnlyPayload(rawOutput.get(), 0 ,rawOutput.len());
+      }
       nextPhase = Phase.WRITING_RESPONSE;
     } catch (TTransportException e) {
       failIO(e);
@@ -362,60 +358,51 @@ public class NonblockingSaslHandler {
   // Write handlings
 
   private void handleWritingSaslChallenge() {
-    if (!saslChallenge.isComplete()) {
-      try {
-        saslChallenge.write(underlyingTransport);
-        if (saslChallenge.isComplete()) {
-          nextPhase = Phase.READING_SASL_RESPONSE;
-        }
-      } catch (IOException e) {
-        fail(e);
+    try {
+      saslChallenge.write(underlyingTransport);
+      if (saslChallenge.isComplete()) {
+        saslChallenge.clear();
+        nextPhase = Phase.READING_SASL_RESPONSE;
       }
+    } catch (IOException e) {
+      fail(e);
     }
   }
 
   private void handleWritingSuccessMessage() {
-    if (!saslChallenge.isComplete()) {
-      try {
-        saslChallenge.write(underlyingTransport);
-        if (saslChallenge.isComplete()) {
-          LOGGER.debug("Authentication is done.");
-          saslChallenge = null;
-          saslResponse = null;
-          memoryTransport = new TMemoryTransport();
-          requestProtocol = inputProtocolFactory.getProtocol(memoryTransport);
-          responseProtocol = outputProtocolFactory.getProtocol(memoryTransport);
-          nextPhase = Phase.READING_REQUEST;
-        }
-      } catch (IOException e) {
-        fail(e);
+    try {
+      saslChallenge.write(underlyingTransport);
+      if (saslChallenge.isComplete()) {
+        LOGGER.debug("Authentication is done.");
+        saslChallenge = null;
+        saslResponse = null;
+        nextPhase = Phase.READING_REQUEST;
       }
+    } catch (IOException e) {
+      fail(e);
     }
   }
 
   private void handleWritingFailureMessage() {
-    if (!saslChallenge.isComplete()) {
-      try {
-        saslChallenge.write(underlyingTransport);
-        if (saslChallenge.isComplete()) {
-          nextPhase = Phase.CLOSING;
-        }
-      } catch (IOException e) {
-        fail(e);
+    try {
+      saslChallenge.write(underlyingTransport);
+      if (saslChallenge.isComplete()) {
+        nextPhase = Phase.CLOSING;
       }
+    } catch (IOException e) {
+      fail(e);
     }
   }
 
   private void handleWritingResponse() {
-    if (!responseWriter.isComplete()) {
-      try {
-        responseWriter.write(underlyingTransport);
-        if (responseWriter.isComplete()) {
-          nextPhase = Phase.READING_REQUEST;
-        }
-      } catch (IOException e) {
-        fail(e);
+    try {
+      responseWriter.write(underlyingTransport);
+      if (responseWriter.isComplete()) {
+        responseWriter.clear();
+        nextPhase = Phase.READING_REQUEST;
       }
+    } catch (IOException e) {
+      fail(e);
     }
   }
 
@@ -430,7 +417,9 @@ public class NonblockingSaslHandler {
       saslPeer.dispose();
     }
     if (serverContextCreated) {
-      eventHandler.deleteContext(serverContext, requestProtocol, responseProtocol);
+      eventHandler.deleteContext(serverContext,
+          inputProtocolFactory.getProtocol(underlyingTransport),
+          outputProtocolFactory.getProtocol(underlyingTransport));
     }
     nextPhase = Phase.CLOSED;
     currentPhase = Phase.CLOSED;

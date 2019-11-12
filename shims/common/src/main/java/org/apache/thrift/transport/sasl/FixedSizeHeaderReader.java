@@ -31,17 +31,15 @@ import java.nio.ByteBuffer;
 public abstract class FixedSizeHeaderReader implements FrameHeaderReader {
 
   protected final ByteBuffer byteBuffer = ByteBuffer.allocate(headerSize());
-  private boolean complete = false;
 
   @Override
   public boolean isComplete() {
-    return complete;
+    return !byteBuffer.hasRemaining();
   }
 
   @Override
   public void clear() {
     byteBuffer.clear();
-    complete = false;
   }
 
   @Override
@@ -53,24 +51,13 @@ public abstract class FixedSizeHeaderReader implements FrameHeaderReader {
   }
 
   @Override
-  public int read(TTransport transport) throws TTransportException {
-    int got = FrameReader.readAvailable(transport, byteBuffer);
-    tryComplete();
-    return got;
-  }
-
-  private void tryComplete() throws TTransportException {
-    if (!byteBuffer.hasRemaining()) {
-      onComplete();
-      complete = true;
+  public boolean read(TTransport transport) throws TTransportException {
+    FrameReader.readAvailable(transport, byteBuffer);
+    if (byteBuffer.hasRemaining()) {
+      return false;
     }
-  }
-
-  @Override
-  public int readAll(TTransport transport) throws TTransportException {
-    int got = FrameReader.readAll(transport, byteBuffer);
-    tryComplete();
-    return got;
+    onComplete();
+    return true;
   }
 
   /**
@@ -78,6 +65,10 @@ public abstract class FixedSizeHeaderReader implements FrameHeaderReader {
    */
   protected abstract int headerSize();
 
+  /**
+   * Actions (e.g. validation) to carry out when the header is complete.
+   *
+   * @throws TTransportException
+   */
   protected abstract void onComplete() throws TTransportException;
-
 }

@@ -28,8 +28,8 @@ import org.apache.thrift.transport.TTransportException;
 public interface FrameHeaderReader {
 
   /**
-   * As the thrift sasl specification states, all sasl messages (both for negotiatiing and for sending
-   * data) should have a header to indicate the size of the payload.
+   * As the thrift sasl specification states, all sasl messages (both for negotiatiing and for
+   * sending data) should have a header to indicate the size of the payload.
    *
    * @return size of the payload.
    */
@@ -56,20 +56,9 @@ public interface FrameHeaderReader {
    * (Nonblocking) Read fields from underlying transport layer.
    *
    * @param transport underlying transport.
-   * @return Length of bytes read out of the transport.
-   * @throws TSaslNegotiationException if fail to read back a valid header of a sasl negotiation message.
+   * @return true if header is complete after read.
+   * @throws TSaslNegotiationException if fail to read a valid header of a sasl negotiation message.
    * @throws TTransportException if io error.
    */
-  int read(TTransport transport) throws TSaslNegotiationException, TTransportException;
-
-  /**
-   * Read the whole header out of the transport, it might block if the underlying transport does not
-   * have all data available.
-   *
-   * @param transport
-   * @return Length of bytes read out of the transport.
-   * @throws TSaslNegotiationException if fail to read back a valid header of a sasl negotiation message.
-   * @throws TTransportException if io error.
-   */
-  int readAll(TTransport transport) throws TSaslNegotiationException, TTransportException;
+  boolean read(TTransport transport) throws TSaslNegotiationException, TTransportException;
 }

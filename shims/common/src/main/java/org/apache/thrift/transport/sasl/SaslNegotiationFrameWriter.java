@@ -19,9 +19,10 @@
 
 package org.apache.thrift.transport.sasl;
 
-import org.apache.thrift.utils.StringUtils;
-
 import java.nio.ByteBuffer;
+
+import org.apache.thrift.EncodingUtils;
+import org.apache.thrift.utils.StringUtils;
 
 import static org.apache.thrift.transport.sasl.SaslNegotiationHeaderReader.PAYLOAD_LENGTH_BYTES;
 import static org.apache.thrift.transport.sasl.SaslNegotiationHeaderReader.STATUS_BYTES;
@@ -32,15 +33,24 @@ import static org.apache.thrift.transport.sasl.SaslNegotiationHeaderReader.STATU
  */
 public class SaslNegotiationFrameWriter extends FrameWriter {
 
+  public static final int HEADER_BYTES = STATUS_BYTES + PAYLOAD_LENGTH_BYTES;
+
   @Override
-  protected ByteBuffer buildBuffer(byte[] header, byte[] payload) {
-    if (header == null || header.length != STATUS_BYTES) {
+  public void withOnlyPayload(byte[] payload, int offset, int length) {
+    throw new UnsupportedOperationException("Status byte is expected for sasl frame header.");
+  }
+
+  @Override
+  protected ByteBuffer buildFrame(byte[] header, int headerOffset, int headerLength,
+                                  byte[] payload, int payloadOffset, int payloadLength) {
+    if (header == null || headerLength != STATUS_BYTES) {
       throw new IllegalArgumentException("Header " + StringUtils.bytesToHexString(header) +
           " does not have expected length " + STATUS_BYTES);
     }
-    return ByteBuffer.allocate(STATUS_BYTES + PAYLOAD_LENGTH_BYTES + payload.length)
-        .put(header)
-        .putInt(payload.length)
-        .put(payload);
+    byte[] bytes = new byte[HEADER_BYTES + payloadLength];
+    System.arraycopy(header, headerOffset, bytes, 0, STATUS_BYTES);
+    EncodingUtils.encodeBigEndian(payloadLength, bytes, STATUS_BYTES);
+    System.arraycopy(payload, payloadOffset, bytes, HEADER_BYTES, payloadLength);
+    return ByteBuffer.wrap(bytes);
   }
 }

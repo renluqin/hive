@@ -20,24 +20,25 @@
 package org.apache.thrift.transport;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
+
+import org.apache.thrift.TByteArrayOutputStream;
 
 /**
- * In memory transport with separate buffers for input and output. It is expected to call reset to
- * provide the input and clean up the output, each time before it is used by a thrfit processor.
- * {@link TMemoryTransport#isOpen()} always returns true only after
- * {@link TMemoryTransport#reset(byte[])} or {@link TMemoryTransport#read(byte[], int, int)}
- * is called at least once.
+ * In memory transport with separate buffers for input and output.
  */
 public class TMemoryTransport extends TTransport {
 
-  private ByteBuffer inputBuffer;
-  private List<byte[]> outputBuffer = new ArrayList<>();
+  private final ByteBuffer inputBuffer;
+  private final TByteArrayOutputStream outputBuffer;
+
+  public TMemoryTransport(byte[] input) {
+    inputBuffer = ByteBuffer.wrap(input);
+    outputBuffer = new TByteArrayOutputStream(1024);
+  }
 
   @Override
   public boolean isOpen() {
-    return !(inputBuffer == null || outputBuffer == null);
+    return true;
   }
 
   /**
@@ -50,8 +51,7 @@ public class TMemoryTransport extends TTransport {
 
   @Override
   public void close() {
-    inputBuffer = null;
-    outputBuffer = null;
+    // Do nothing.
   }
 
   @Override
@@ -59,7 +59,7 @@ public class TMemoryTransport extends TTransport {
     int remaining = inputBuffer.remaining();
     if (remaining < len) {
       throw new TTransportException(TTransportException.END_OF_FILE,
-          "There's only " + remaining + ", but is asked for " + len + " bytes");
+          "There's only " + remaining + "bytes, but it asks for " + len);
     }
     inputBuffer.get(buf, off, len);
     return len;
@@ -67,38 +67,15 @@ public class TMemoryTransport extends TTransport {
 
   @Override
   public void write(byte[] buf, int off, int len) throws TTransportException {
-    byte[] written = new byte[len];
-    System.arraycopy(buf, off, written, 0, len);
-    outputBuffer.add(written);
-  }
-
-  /**
-   * Reset the in memory transport, by providing a new input and clearing the output buffer.
-   * This method should be called before using it.
-   *
-   * @param input The input byte array that will be read by thrift input protocol.
-   */
-  public void reset(byte[] input) {
-    inputBuffer = ByteBuffer.wrap(input);
-    outputBuffer.clear();
+    outputBuffer.write(buf, off, len);
   }
 
   /**
    * Get all the bytes written by thrift output protocol.
    *
-   * @return byte array.
+   * @return a byte array.
    */
-  public byte[] getOutput() {
-    int length = 0;
-    for (byte[] bytes : outputBuffer) {
-      length += bytes.length;
-    }
-    byte[] output = new byte[length];
-    int position = 0;
-    for (byte[] bytes : outputBuffer) {
-      System.arraycopy(bytes, 0, output, position, bytes.length);
-      position += bytes.length;
-    }
-    return output;
+  public TByteArrayOutputStream getOutput() {
+    return outputBuffer;
   }
 }

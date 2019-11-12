@@ -19,21 +19,6 @@
 
 package org.apache.thrift.server;
 
-import org.apache.thrift.TProcessor;
-import org.apache.thrift.transport.TNonblockingServerSocket;
-import org.apache.thrift.transport.TNonblockingServerTransport;
-import org.apache.thrift.transport.TNonblockingTransport;
-import org.apache.thrift.transport.TTransportException;
-import org.apache.thrift.transport.sasl.NonblockingSaslHandler;
-import org.apache.thrift.transport.sasl.NonblockingSaslHandler.Phase;
-import org.apache.thrift.transport.sasl.TBaseSaslProcessorFactory;
-import org.apache.thrift.transport.sasl.TSaslProcessorFactory;
-import org.apache.thrift.transport.sasl.TSaslServerDefinition;
-import org.apache.thrift.transport.sasl.TSaslServerFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.security.auth.callback.CallbackHandler;
 import java.io.IOException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -47,6 +32,21 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+
+import javax.security.auth.callback.CallbackHandler;
+
+import org.apache.thrift.TProcessor;
+import org.apache.thrift.transport.TNonblockingServerSocket;
+import org.apache.thrift.transport.TNonblockingServerTransport;
+import org.apache.thrift.transport.TNonblockingTransport;
+import org.apache.thrift.transport.TTransportException;
+import org.apache.thrift.transport.sasl.NonblockingSaslHandler;
+import org.apache.thrift.transport.sasl.NonblockingSaslHandler.Phase;
+import org.apache.thrift.transport.sasl.TBaseSaslProcessorFactory;
+import org.apache.thrift.transport.sasl.TSaslProcessorFactory;
+import org.apache.thrift.transport.sasl.TSaslServerFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * TServer with sasl support, using asynchronous execution and nonblocking io.
@@ -388,7 +388,7 @@ public class TSaslNonblockingServer extends TServer {
     NetworkThreadPool(int size) throws IOException {
       networkThreads = new ArrayList<>(size);
       int digits = (int) Math.log10(size) + 1;
-      String threadNamePattern = "networrk-thread-%0" + digits + "d";
+      String threadNamePattern = "network-thread-%0" + digits + "d";
       for (int i = 0; i < size; i++) {
         networkThreads.add(new NetworkThread(String.format(threadNamePattern, i)));
       }
@@ -451,7 +451,7 @@ public class TSaslNonblockingServer extends TServer {
 
     public Args saslProcessorFactory(TSaslProcessorFactory saslProcessorFactory) {
       if (saslProcessorFactory == null) {
-        throw new NullPointerException("saslProcessorFactory cannot be null");
+        throw new NullPointerException("Processor factory cannot be null");
       }
       this.saslProcessorFactory = saslProcessorFactory;
       return this;
