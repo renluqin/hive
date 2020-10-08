@@ -3666,7 +3666,7 @@ public class HiveMetaStore extends ThriftHiveMetastore {
           throw newMetaException(e);
         }
       } finally {
-        endFunction("alter_partition", oldParts != null, ex, db_name, tbl_name);
+        endFunction("alter_partitions", oldParts != null, ex, db_name, tbl_name);
       }
     }
 
