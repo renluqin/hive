@@ -4433,6 +4433,14 @@ public class HiveConf extends Configuration {
     }
   }
 
+  public String getShortUser() throws IOException {
+    try {
+      return Utils.getUGI().getShortUserName();
+    } catch (LoginException le) {
+      throw new IOException(le);
+    }
+  }
+
   public static String getColumnInternalName(int pos) {
     return "_col" + pos;
   }

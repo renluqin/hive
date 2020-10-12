@@ -783,12 +783,27 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       logAuditEvent(m);
     }
 
+    private static boolean isReadFunction(String function) {
+      return function.startsWith("get") || function.startsWith("partition_name");
+    }
+
     private String startFunction(String function, String extraLogInfo) {
       incrementCounter(function);
       logInfo((getThreadLocalIpAddress() == null ? "" : "source:" + getThreadLocalIpAddress() + " ") +
           function + extraLogInfo);
-      if (MetricsFactory.getInstance() != null) {
-        MetricsFactory.getInstance().startStoredScope(MetricsConstant.API_PREFIX + function);
+      Metrics metrics = MetricsFactory.getInstance();
+      if (metrics != null) {
+        metrics.startStoredScope(MetricsConstant.API_PREFIX + function);
+        try {
+          String userSuffix = "_username_" + hiveConf.getShortUser();
+          if (isReadFunction(function)) {
+            metrics.incrementCounter(MetricsConstant.API_PREFIX + "read_total" + userSuffix);
+          } else {
+            metrics.incrementCounter(MetricsConstant.API_PREFIX + "write_total" + userSuffix);
+          }
+        } catch (IOException e) {
+          LOG.warn("Failed to get authenticated user", e);
+        }
       }
       return function;
     }
