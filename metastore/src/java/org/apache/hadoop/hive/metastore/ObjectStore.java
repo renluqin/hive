@@ -2125,6 +2125,44 @@ public class ObjectStore implements RawStore, Configurable {
     }.run(false);
   }
 
+  public Map<String, String> getPartitionLocations(String dbName, String tblName,
+                                                   int max) {
+
+    boolean success = false;
+    Query query = null;
+    Map<String, String> partLocations = new HashMap<>();
+    try {
+      openTransaction();
+      LOG.debug("Executing getPartitionLocations");
+
+      query = pm.newQuery(MPartition.class);
+      query.setFilter("this.table.database.name == t1 "
+          + "&& this.table.tableName == t2");
+      query.declareParameters("String t1, String t2");
+      query.setResult("this.partitionName, this.sd.location");
+      if (max >= 0) {
+        //Row limit specified, set it on the Query
+        query.setRange(0, max);
+      }
+
+      List<Object[]> result = (List<Object[]>)query.execute(dbName, tblName);
+      for(Object[] row:result) {
+        String location = (String)row[1];
+        partLocations.put((String)row[0], location);
+      }
+      LOG.debug("Done executing query for getPartitionLocations");
+      success = commitTransaction();
+    } finally {
+      if (!success) {
+        rollbackTransaction();
+      }
+      if (query != null) {
+        query.closeAll();
+      }
+    }
+    return partLocations;
+  }
+
   @Override
   public List<Partition> getPartitionsWithAuth(String dbName, String tblName,
       short max, String userName, List<String> groupNames)
@@ -3432,6 +3470,26 @@ public class ObjectStore implements RawStore, Configurable {
       rollbackAndCleanup(success, query);
     }
     return partNames;
+  }
+
+  @Override
+  public Map<String, String> listPartitionLocations(String dbName, String tblName,
+                                                    short max_parts) throws MetaException, NoSuchObjectException {
+
+    Map<String, String> partLocations;
+    boolean success = false;
+    QueryWrapper queryWrapper = new QueryWrapper();
+    try {
+      openTransaction();
+      LOG.debug("executing listPartitionLocations");
+      partLocations = getPartitionLocations(dbName, tblName, max_parts);
+      success = commitTransaction();
+      return partLocations;
+    } catch (Exception e) {
+      throw new MetaException(e.getMessage());
+    } finally {
+      rollbackAndCleanup(success, queryWrapper);
+    }
   }
 
   @Override
