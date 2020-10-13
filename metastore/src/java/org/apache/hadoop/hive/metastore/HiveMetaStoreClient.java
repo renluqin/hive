@@ -1531,6 +1531,23 @@ public class HiveMetaStoreClient implements IMetaStoreClient {
         client.get_partition_names_ps(db_name, tbl_name, part_vals, max_parts));
   }
 
+  @Override
+  public Map<String, String> listPartitionLocations(String dbName, String tblName,
+                                                    short maxParts) throws NoSuchObjectException, MetaException, TException {
+    return listPartitionLocationsInternal(dbName, tblName, maxParts);
+  }
+
+  protected Map<String, String> listPartitionLocationsInternal(String dbName, String tableName,
+                                                               short maxParts) throws TException {
+    Map<String, String> result = client.get_partition_locations(dbName, tableName, maxParts);
+    List<String> filteredKeys = filterHook.filterPartitionNames(dbName, tableName,
+      Lists.newArrayList(result.keySet()));
+    for (String filteredKey : filteredKeys) {
+      result.put(filteredKey, result.get(filteredKey));
+    }
+    return result;
+  }
+
   /**
    * Get number of partitions matching specified filter
    * @param db_name the database name

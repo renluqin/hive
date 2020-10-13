@@ -3761,6 +3761,28 @@ public class HiveMetaStore extends ThriftHiveMetastore {
     }
 
     @Override
+    public Map<String, String> get_partition_locations(final String db_name, final String tbl_name,
+                                            final short max_parts) throws MetaException, NoSuchObjectException {
+      startTableFunction("get_partition_locations", db_name, tbl_name);
+      fireReadTablePreEvent(db_name, tbl_name);
+      Map<String, String> ret = null;
+      Exception ex = null;
+      try {
+        ret = getMS().listPartitionLocations(db_name, tbl_name, max_parts);
+      } catch (Exception e) {
+        ex = e;
+        if (e instanceof MetaException) {
+          throw (MetaException) e;
+        } else {
+          throw newMetaException(e);
+        }
+      } finally {
+        endFunction("get_partition_locations", ret != null, ex, db_name, tbl_name);
+      }
+      return ret;
+    }
+
+    @Override
     public void alter_partition(final String db_name, final String tbl_name,
         final Partition new_part)
         throws InvalidOperationException, MetaException, TException {

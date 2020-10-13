@@ -205,6 +205,18 @@ public interface RawStore extends Configurable {
   public abstract List<String> listPartitionNamesByFilter(String db_name,
       String tbl_name, String filter, short max_parts) throws MetaException;
 
+  /**
+   * Get a map of partition names to partition locations
+   * @param dbName database name.
+   * @param tblName table name.
+   * @param maxParts maximum number of partitions to retrieve, -1 for all.
+   * @return map of partition names to partition locations
+   * @throws MetaException there was an error accessing the RDBMS
+   * @throws NoSuchObjectException no such table.
+   */
+  Map<String, String> listPartitionLocations(String dbName, String tblName,
+                                             short maxParts) throws MetaException, NoSuchObjectException;
+
   public abstract void alterPartition(String db_name, String tbl_name, List<String> part_vals,
       Partition new_part) throws InvalidObjectException, MetaException;
 

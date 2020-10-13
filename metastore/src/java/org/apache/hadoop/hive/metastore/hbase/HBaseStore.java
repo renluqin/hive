@@ -664,6 +664,12 @@ public class HBaseStore implements RawStore {
   }
 
   @Override
+  public Map<String, String> listPartitionLocations(String db_name, String tbl_name,
+                                                 short max_parts) throws MetaException {
+    throw new UnsupportedOperationException();
+  }
+
+  @Override
   public void alterPartition(String db_name, String tbl_name, List<String> part_vals,
                              Partition new_part) throws InvalidObjectException, MetaException {
     boolean commit = false;

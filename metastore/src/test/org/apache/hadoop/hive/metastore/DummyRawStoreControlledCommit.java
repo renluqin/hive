@@ -275,6 +275,12 @@ public class DummyRawStoreControlledCommit implements RawStore, Configurable {
   }
 
   @Override
+  public Map<String, String> listPartitionLocations(String dbName, String tblName,
+                                                    short maxParts) throws MetaException, NoSuchObjectException {
+    return Collections.emptyMap();
+  }
+
+  @Override
   public void alterPartition(String dbName, String tblName, List<String> partVals,
       Partition newPart) throws InvalidObjectException, MetaException {
     objectStore.alterPartition(dbName, tblName, partVals, newPart);
