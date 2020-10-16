@@ -385,7 +385,7 @@ public class HttpServer {
       ServletContextHandler logCtx =
         new ServletContextHandler(contexts, "/logs");
       setContextAttributes(logCtx.getServletContext(), b.contextAttrs);
-      logCtx.addServlet(AdminAuthorizedServlet.class, "/*");
+      logCtx.addServlet(DefaultServlet.class, "/*");
       logCtx.setResourceBase(logDir);
       logCtx.setDisplayName("logs");
     }

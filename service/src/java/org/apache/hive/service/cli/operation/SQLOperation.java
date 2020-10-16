@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
 import java.security.PrivilegedExceptionAction;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -235,6 +236,17 @@ public class SQLOperation extends ExecuteStatementOperation {
       // case, when calling fetch queries since execute() has returned.
       // For now, we disable the test attempts.
       driver.setTryCount(Integer.MAX_VALUE);
+
+      int webuiPort = sqlOperationConf.getIntVar(HiveConf.ConfVars.HIVE_SERVER2_WEBUI_PORT);
+      if (webuiPort > 0) {
+        // Provide useful WebUI links to the client
+        String hostname = InetAddress.getLocalHost().getHostName();
+        String webuiUrl = "http://" + hostname + ":" + webuiPort;
+        String sessionId = SessionState.get().getSessionId();
+        LOG.info("Query drilldown: " + webuiUrl + "/query_page?operationId=" + sqlOpDisplay.operationId);
+        LOG.info("Query logs: " + webuiUrl + "/logs/" + sessionId + "/" + sqlOpDisplay.operationId);
+      }
+
       response = driver.run();
       if (0 != response.getResponseCode()) {
         throw toSQLException("Error while processing statement", response);
