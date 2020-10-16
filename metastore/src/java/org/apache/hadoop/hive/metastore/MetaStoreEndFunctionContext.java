@@ -31,6 +31,7 @@ public class MetaStoreEndFunctionContext {
   private final Exception e;
   private final String inputDbName;
   private final String inputTableName;
+  private Long elapsedTimeMs;
 
   public MetaStoreEndFunctionContext(boolean success, Exception e, String inputDbName, String inputTableName) {
     this.success = success;
@@ -41,6 +42,10 @@ public class MetaStoreEndFunctionContext {
 
   public MetaStoreEndFunctionContext(boolean success) {
     this(success, null, null, null);
+  }
+
+  public void setElapsedTimeMs(Long elapsedTimeMs) {
+    this.elapsedTimeMs = elapsedTimeMs;
   }
 
   /**
@@ -62,4 +67,7 @@ public class MetaStoreEndFunctionContext {
     return inputDbName;
   }
 
+  public Long getElapsedTimeMs() {
+    return elapsedTimeMs;
+  }
 }

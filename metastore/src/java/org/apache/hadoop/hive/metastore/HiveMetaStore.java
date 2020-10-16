@@ -74,6 +74,7 @@ import org.apache.hadoop.hive.common.auth.HiveAuthUtils;
 import org.apache.hadoop.hive.common.classification.InterfaceAudience;
 import org.apache.hadoop.hive.common.classification.InterfaceStability;
 import org.apache.hadoop.hive.common.cli.CommonCliOptions;
+import org.apache.hadoop.hive.common.metrics.SimpleTimer;
 import org.apache.hadoop.hive.common.metrics.common.Metrics;
 import org.apache.hadoop.hive.common.metrics.common.MetricsConstant;
 import org.apache.hadoop.hive.common.metrics.common.MetricsFactory;
@@ -794,6 +795,7 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       Metrics metrics = MetricsFactory.getInstance();
       if (metrics != null) {
         metrics.startStoredScope(MetricsConstant.API_PREFIX + function);
+        SimpleTimer.start(function);
         try {
           String userSuffix = "_username_" + hiveConf.getShortUser();
           if (isReadFunction(function)) {
@@ -849,6 +851,9 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       if (MetricsFactory.getInstance() != null) {
         MetricsFactory.getInstance().endStoredScope(MetricsConstant.API_PREFIX + function);
       }
+
+      Long elapsedTimeMs = SimpleTimer.stop(function);
+      context.setElapsedTimeMs(elapsedTimeMs);
 
       for (MetaStoreEndFunctionListener listener : endFunctionListeners) {
         listener.onEndFunction(function, context);
