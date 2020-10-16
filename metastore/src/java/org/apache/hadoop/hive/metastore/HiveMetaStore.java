@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.hive.metastore;
 
+import org.apache.hadoop.hive.common.metrics.SimpleTimer;
 import org.apache.hadoop.hive.metastore.api.MetaException;
 
 import com.facebook.fb303.FacebookBase;
@@ -842,6 +843,8 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       if (MetricsFactory.getInstance() != null) {
         MetricsFactory.getInstance().startStoredScope(function);
       }
+
+      SimpleTimer.start(function);
       return function;
     }
 
@@ -886,6 +889,9 @@ public class HiveMetaStore extends ThriftHiveMetastore {
       if (MetricsFactory.getInstance() != null) {
         MetricsFactory.getInstance().endStoredScope(function);
       }
+
+      Long elapsedTimeMs = SimpleTimer.stop(function);
+      context.setElapsedTimeMs(elapsedTimeMs);
 
       for (MetaStoreEndFunctionListener listener : endFunctionListeners) {
         listener.onEndFunction(function, context);
