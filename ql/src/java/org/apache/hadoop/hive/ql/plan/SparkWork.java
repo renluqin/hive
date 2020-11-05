@@ -30,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
@@ -45,7 +46,7 @@ import com.google.common.base.Preconditions;
 @SuppressWarnings("serial")
 @Explain(displayName = "Spark", vectorization = Vectorization.SUMMARY_PATH)
 public class SparkWork extends AbstractOperatorDesc {
-  private static int counter;
+  private static final AtomicInteger counter = new AtomicInteger(1);
   private final String dagName;
   private final String queryId;
 
@@ -65,7 +66,7 @@ public class SparkWork extends AbstractOperatorDesc {
 
   public SparkWork(String queryId) {
     this.queryId = queryId;
-    this.dagName = queryId + ":" + (++counter);
+    this.dagName = queryId + ":" + counter.getAndIncrement();
     cloneToWork = new HashMap<BaseWork, BaseWork>();
   }
 
