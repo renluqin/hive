@@ -76,7 +76,9 @@ public class SparkWork extends AbstractOperatorDesc {
     return this.dagName;
   }
 
-  public String getQueryId() { return this.queryId; }
+  public String getQueryId() {
+    return this.queryId;
+  }
 
   /**
    * @return a map of "vertex name" to BaseWork
